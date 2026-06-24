@@ -3,6 +3,47 @@
 Guidance for agents working in this repository. See `README.md` for project
 structure, verification, and formatting commands.
 
+## Comment Conventions
+
+Comments capture what the code cannot say for itself — intent and rationale, not
+a restatement of the code. They split by audience.
+
+### Doc comments (`///`): the contract
+
+Document every type and public API with a doc comment describing *what* it
+guarantees and *why* it exists — never *how* it is implemented. A caller should
+be able to use it without reading the body.
+
+- On a type: the design role it plays. e.g. `Day` keys daily data so that two
+  timestamps on the same local day compare and hash as equal.
+- On a method: the behavioral contract — inclusive/exclusive bounds, the meaning
+  of `nil`, the `precondition`s, and how edge cases resolve. A short bullet list
+  is preferred over prose when there are several rules.
+- This is where rules from the design doc become the code's contract. State the
+  rule, not the design-doc vocabulary (no "Phase 1", "section 6", etc.).
+
+### Inline comments (`//`): the non-obvious *why*
+
+Inside a body, comment only what is not evident from the code itself. Do not
+paraphrase *what* a line does. Three things are worth a line:
+
+1. **Design intent / trade-offs** — a choice the code cannot reveal. e.g. why
+   `RelativeScaler` ranks against distinct values (tier, not frequency); why
+   `Day.adding` re-normalizes with `startOfDay` (avoids DST drift).
+2. **Non-obvious edges** — the reason behind a guard or expression, e.g.
+   `max(count - 1, 1)`, the level clamp, or a `firstAvailableDay == nil` branch.
+3. **Invariants** — the `precondition` message declares the programmer-error
+   contract.
+
+Leave obvious code uncommented: trivial assignments, getters, anything the
+signature already says.
+
+### Above all: preserve design intent
+
+If a decision is not readable from the code — a formula chosen over an
+alternative, a defensive guard, a boundary convention — leave the rationale in a
+comment. This is the highest-value comment to write.
+
 ## Testing Conventions
 
 These conventions apply to the `StepMossaicDomain` package tests (Swift Testing).

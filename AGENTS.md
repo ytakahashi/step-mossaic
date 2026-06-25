@@ -11,8 +11,7 @@ a restatement of the code. They split by audience.
 ### Doc comments (`///`): the contract
 
 Document every type and public API with a doc comment describing *what* it
-guarantees and *why* it exists — never *how* it is implemented. A caller should
-be able to use it without reading the body.
+guarantees and *why* it exists — never *how* it is implemented.
 
 - On a type: the design role it plays. e.g. `Day` keys daily data so that two
   timestamps on the same local day compare and hash as equal.
@@ -35,9 +34,6 @@ paraphrase *what* a line does. Three things are worth a line:
 3. **Invariants** — the `precondition` message declares the programmer-error
    contract.
 
-Leave obvious code uncommented: trivial assignments, getters, anything the
-signature already says.
-
 ### Above all: preserve design intent
 
 If a decision is not readable from the code — a formula chosen over an
@@ -45,9 +41,6 @@ alternative, a defensive guard, a boundary convention — leave the rationale in
 comment. This is the highest-value comment to write.
 
 ## Testing Conventions
-
-These conventions apply to the `StepMossaicDomain` package tests (Swift Testing).
-Existing tests are migrated opportunistically, when next touched — not in bulk.
 
 ### Structure: Arrange / Act / Assert
 
@@ -71,14 +64,11 @@ func dayNormalizesToStartOfLocalDay() {
 
 - When a phase is a single self-evident line, collapse it into a combined
   `// Act & Assert` rather than padding empty sections.
-- Prefer AAA (input → output) over Given/When/Then: the domain is mostly pure
-  functions with no stateful preconditions to set up.
 
 ### Intent: `@Test` display name
 
 Give every test a `@Test("...")` display name stating the behavior it
-guarantees (the *what*). It surfaces in test output as a readable spec, separate
-from the function name. Keep the function name behavior-oriented too.
+guarantees (the *what*).
 
 ### Verification points: `why` comments
 
@@ -94,9 +84,15 @@ Do not annotate every assertion; obvious checks stay uncommented.
 
 ### Grouping and helpers
 
-- Keep tests as free `@Test` functions (no `@Suite` structs for now).
-- Share deterministic fixtures via `Tests/.../Support` — e.g. `TestCalendar` for
-  fixed calendars and `makeDay(_:_:_:)` for building `Day` values. Reuse these
+- Keep tests as free `@Test` functions.
+- Share deterministic fixtures via `Tests/.../Support` to reuse the same code
   instead of re-deriving dates inline.
 - Domain logic is deterministic: inject `Calendar` and dates explicitly; never
   rely on `Date()` or `Calendar.current` in tests.
+
+### Layout: mirror the source tree
+
+Each test target mirrors the folder structure of the code it covers for
+both the domain package (`StepMossaicDomain`) and the app (`StepMossaic`).
+
+Shared fixtures can be in a `Support` folder under the target.

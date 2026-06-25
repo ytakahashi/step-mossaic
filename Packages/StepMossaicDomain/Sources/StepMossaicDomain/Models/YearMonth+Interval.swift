@@ -44,7 +44,7 @@ extension YearMonth {
 }
 
 extension Calendar {
-  fileprivate var stepMossaicGregorian: Calendar {
+  var stepMossaicGregorian: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
     calendar.locale = locale

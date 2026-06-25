@@ -11,7 +11,8 @@ public struct YearMonth: Hashable, Comparable, Sendable {
   }
 
   public init(date: Date, calendar: Calendar = .current) {
-    let components = calendar.dateComponents([.year, .month], from: date)
+    let gregorianCalendar = calendar.stepMossaicGregorian
+    let components = gregorianCalendar.dateComponents([.year, .month], from: date)
     self.init(year: components.year ?? 1970, month: components.month ?? 1)
   }
 

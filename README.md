@@ -9,7 +9,9 @@ StepMossaic/
   StepMossaic.xcodeproj
   StepMossaic/
     App/                 App-level setup such as SwiftData container wiring
-    Data/Persistence/    SwiftData cache models
+    Data/Persistence/    SwiftData cache models (@Model records)
+    Data/Mapping/        Record <-> domain value conversions
+    Data/Repositories/   SwiftData-backed StepLogStore / MarimoStore
     Presentation/        SwiftUI screens and shared UI components
   StepMossaicTests/
   StepMossaicUITests/
@@ -27,7 +29,10 @@ Presentation -> Domain <- Data
 ```
 
 - `StepMossaicDomain` is a local Swift package with no SwiftUI, SwiftData, UIKit, or HealthKit dependency.
-- App-side `Data` code will implement Domain protocols for HealthKit and SwiftData.
+- App-side `Data` implements the Domain store protocols against SwiftData
+  (`SwiftDataStepLogStore`, `SwiftDataMarimoStore`); these are main-actor isolated
+  because they wrap a single, non-`Sendable` `ModelContext`. The HealthKit
+  `StepSource` implementation is not yet wired.
 - App-side `Presentation` currently contains the initial `TabView` skeleton: Home, Shelf, and Settings.
 
 ## Verification

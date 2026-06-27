@@ -1,0 +1,11 @@
+# lefthook.yml
+#
+# Refer to https://github.com/evilmartians/lefthook/blob/master/docs/configuration.md
+# for details.
+
+pre-commit:
+  parallel: true
+  commands:
+    swift-format:
+      glob: "*.swift"
+      run: xcrun swift-format lint --parallel --strict {staged_files}

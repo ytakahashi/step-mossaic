@@ -37,6 +37,8 @@ Presentation -> Domain <- Data
 
 ## Verification
 
+Following commands are also configured using [justfile](./justfile) (`just`) and [lefthook.yml](./lefthook.yml) (`lefthook`).
+
 `xcbeautify` is optional but recommended for Xcode command output.
 
 ### Test Categories

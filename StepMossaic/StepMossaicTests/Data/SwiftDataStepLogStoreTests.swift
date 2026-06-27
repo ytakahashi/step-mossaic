@@ -56,13 +56,11 @@ func stepLogStoreAnchorRoundTrips() throws {
   #expect(try store.anchorState() == nil)
 
   // Act: saving twice must keep a single row updated in place.
-  let payload = Data([0x01, 0x02])
-  try store.saveAnchor(SyncAnchor(anchorData: payload, lastSyncedDate: makeDate(2026, 6, 1)))
-  try store.saveAnchor(SyncAnchor(anchorData: payload, lastSyncedDate: makeDate(2026, 6, 2)))
+  try store.saveAnchor(SyncAnchor(lastSyncedDate: makeDate(2026, 6, 1)))
+  try store.saveAnchor(SyncAnchor(lastSyncedDate: makeDate(2026, 6, 2)))
 
-  // Assert
+  // Assert: the second save overwrote the singleton row.
   let anchor = try store.anchorState()
-  #expect(anchor?.anchorData == payload)
   #expect(anchor?.lastSyncedDate == makeDate(2026, 6, 2))
 }
 
@@ -72,7 +70,7 @@ func stepLogStoreResetClearsEverything() throws {
   // Arrange
   let store = try makeStore()
   try store.upsert([DailySteps(day: makeDay(2026, 6, 1), steps: 100)])
-  try store.saveAnchor(SyncAnchor(anchorData: Data([0x01]), lastSyncedDate: makeDate(2026, 6, 1)))
+  try store.saveAnchor(SyncAnchor(lastSyncedDate: makeDate(2026, 6, 1)))
 
   // Act
   try store.reset()

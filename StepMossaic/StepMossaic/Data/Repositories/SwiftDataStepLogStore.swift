@@ -82,11 +82,7 @@ extension SwiftDataStepLogStore: @MainActor StepLogStore {
       existing.apply(anchor)
     } else {
       context.insert(
-        SyncAnchorRecord(
-          id: Self.anchorID,
-          anchorData: anchor.anchorData,
-          lastSyncedDate: anchor.lastSyncedDate
-        )
+        SyncAnchorRecord(id: Self.anchorID, lastSyncedDate: anchor.lastSyncedDate)
       )
     }
     try context.save()

@@ -7,11 +7,10 @@ extension SyncAnchorRecord {
   /// The record `id` is a fixed singleton key, so saving an anchor updates the
   /// one row in place rather than accumulating history.
   func apply(_ anchor: SyncAnchor) {
-    anchorData = anchor.anchorData
     lastSyncedDate = anchor.lastSyncedDate
   }
 
   func toDomain() -> SyncAnchor {
-    SyncAnchor(anchorData: anchorData, lastSyncedDate: lastSyncedDate)
+    SyncAnchor(lastSyncedDate: lastSyncedDate)
   }
 }

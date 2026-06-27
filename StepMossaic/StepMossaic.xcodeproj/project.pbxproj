@@ -31,6 +31,7 @@
 		E752236C2FEC78CF0040194E /* StepMossaic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StepMossaic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E752237B2FEC78D10040194E /* StepMossaicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StepMossaicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E75223852FEC78D10040194E /* StepMossaicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StepMossaicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E75225902FEF73A90040194E /* StepMossaic.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = StepMossaic.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -80,6 +81,7 @@
 		E75223632FEC78CF0040194E = {
 			isa = PBXGroup;
 			children = (
+				E75225902FEF73A90040194E /* StepMossaic.xctestplan */,
 				E752236E2FEC78CF0040194E /* StepMossaic */,
 				E752237E2FEC78D10040194E /* StepMossaicTests */,
 				E75223882FEC78D10040194E /* StepMossaicUITests */,

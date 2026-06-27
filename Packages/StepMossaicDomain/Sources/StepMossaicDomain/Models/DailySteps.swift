@@ -1,6 +1,5 @@
 /// The domain's single daily-step value, keyed by `Day`.
 ///
-/// This replaces the older `DailyStepTotal`  domain models.
 /// Persistence concerns such as `updatedAt` live only in the data layer's
 /// record, never here.
 public struct DailySteps: Equatable, Sendable {

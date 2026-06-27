@@ -1,0 +1,39 @@
+{
+  "configurations" : [
+    {
+      "id" : "122DCC56-CA7F-42DD-B95A-18CA4F8AE6B7",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:StepMossaic.xcodeproj",
+      "identifier" : "E752236B2FEC78CF0040194E",
+      "name" : "StepMossaic"
+    }
+  },
+  "testTargets" : [
+    {
+      "enabled" : false,
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:StepMossaic.xcodeproj",
+        "identifier" : "E752237A2FEC78D10040194E",
+        "name" : "StepMossaicTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:StepMossaic.xcodeproj",
+        "identifier" : "E75223842FEC78D10040194E",
+        "name" : "StepMossaicUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

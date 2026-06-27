@@ -37,11 +37,68 @@ Presentation -> Domain <- Data
 
 ## Verification
 
-- requires `xcbeautify`
+`xcbeautify` is optional but recommended for Xcode command output.
+
+### Test Categories
+
+- Domain package tests (`Packages/StepMossaicDomain/Tests`)
+  - Pure domain logic.
+  - Runs without an iOS simulator.
+- App unit tests (`StepMossaic/StepMossaicTests`)
+  - App-side unit tests, including SwiftData stores with in-memory persistence.
+  - Run through the `StepMossaicUnitTests` scheme.
+  - This scheme references only `StepMossaicTests.xctest`, so it does not build
+    or sign the UI test bundle.
+- UI tests (`StepMossaic/StepMossaicUITests`)
+  - Launches the app in a simulator.
+  - Run through the `StepMossaicUITests` scheme.
+  - These are slower because Xcode must build, install, sign, and launch the app
+    and UI test runner on a concrete simulator.
+
+The app scheme (`StepMossaic`) remains available for normal app build/run
+workflows. For command-line testing, prefer the dedicated unit/UI test schemes so
+the intended test target is explicit.
+
+### Run Tests
+
+Run the pure domain package tests:
 
 ```sh
 swift test --package-path Packages/StepMossaicDomain
-xcodebuild -project StepMossaic/StepMossaic.xcodeproj -scheme StepMossaic -destination 'generic/platform=iOS Simulator' | xcbeautify
+```
+
+Run app unit tests on a concrete simulator:
+
+```sh
+xcodebuild test \
+  -project StepMossaic/StepMossaic.xcodeproj \
+  -scheme StepMossaicUnitTests \
+  -destination id=<SIMULATOR-UDID> | xcbeautify
+```
+
+Run UI tests only when needed:
+
+```sh
+xcodebuild test \
+  -project StepMossaic/StepMossaic.xcodeproj \
+  -scheme StepMossaicUITests \
+  -destination id=<SIMULATOR-UDID> | xcbeautify
+```
+
+For a faster build-only smoke check, use a generic simulator destination. This
+does not run tests on a booted simulator:
+
+```sh
+xcodebuild build-for-testing \
+  -project StepMossaic/StepMossaic.xcodeproj \
+  -scheme StepMossaicUnitTests \
+  -destination 'generic/platform=iOS Simulator' | xcbeautify
+```
+
+List available simulator IDs:
+
+```sh
+xcrun simctl list devices available
 ```
 
 ## Format and Lint

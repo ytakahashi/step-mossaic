@@ -27,26 +27,48 @@ struct MarimoStyle {
 
   /// Short line strokes filling the body — the moss fibers. Drawn one batched pass
   /// per shade band, so density can be high without the draw cost scaling.
-  var fiberCount = 13000
-  var fiberLength = 0.04...0.11
-  var fiberWidth = 0.9
+  var fiberCount = 11000
+  var fiberLength = 0.03...0.11
+  /// Exponent biasing fiber length toward the short end (1 = uniform, higher =
+  /// mostly short with a few long), so strokes look less uniform and symbolic.
+  var fiberLengthBias = 2.2
+  var fiberWidth = 0.85
   var fiberOpacity = 0.5
   /// Random wobble added to each fiber's lit tone, so bands don't show as rings.
   var fiberShadeJitter = 0.06
-  /// How strongly fibers align to the outward radial (0 = random, 1 = fully
-  /// radial). A little flow reads as fiber, not a starburst.
-  var fiberRadialBias = 0.4
-  var fiberAngleJitter = 0.7
+  /// Low-frequency tone patches that make some areas read denser/darker than
+  /// others, so the surface isn't an even field.
+  var fiberClumpFrequency = 1.1
+  var fiberClumpStrength = 0.13
+  /// A coherent flow the fibers follow so neighbours align like combed moss rather
+  /// than scattered marks, plus how strongly they comb along the surface (toward
+  /// the tangent) approaching the rim.
+  var fiberFlowFrequency = 1.6
+  var fiberSurfaceFollow = 0.55
+  var fiberAngleJitter = 0.4
+
+  /// A fine stipple beneath the fibers, lit by the same model, for packed density
+  /// under the visible strokes.
+  var stippleCount = 9000
+  var stippleDotRadius = 0.45
+  var stippleOpacity = 0.4
 
   /// Short fibers straddling the contour — the ragged, fuzzy edge. Lit by the same
   /// model so the fringe is the body's weave continuing past a soft edge.
-  var fuzzCount = 16000
-  var fuzzLength = 0.02...0.07
+  var fuzzCount = 18000
+  var fuzzLength = 0.02...0.10
+  /// Bias toward short rim fibers, leaving a few longer hairs to escape the
+  /// contour for a soft, hairy edge.
+  var fuzzLengthBias = 2.6
   var fuzzWidth = 0.8
-  var fuzzOpacity = 0.4
+  var fuzzOpacity = 0.38
   var fuzzOutwardJitter = 0.5
-  /// How much of each rim fiber sits inside the body; ~0.5 straddles the edge.
-  var fuzzInsetFraction = 0.5
+  /// How much of each rim fiber sits inside the body; below 0.5 lets a touch more
+  /// poke out for a softer edge without going bushy.
+  var fuzzInsetFraction = 0.75
+  /// Feathers the body silhouette (as a fraction of `baseRadius`) so the solid body
+  /// dissolves into the rim fibers instead of ending at a crisp outline.
+  var edgeFeatherFraction = 0.045
 
   /// Fine low-contrast speckle for matte graininess.
   var grainCount = 2200
@@ -77,13 +99,26 @@ struct MarimoView: View {
       let baseRadius = geometry.baseRadius(in: size)
 
       ZStack {
-        litBody(size: size, baseRadius: baseRadius)
-        MarimoFibers(geometry: geometry, shades: shades, style: style)
-        MarimoGrain(
-          geometry: geometry, dark: color(MarimoPalette.shadow), style: style
-        )
-        .blendMode(.softLight)
-        .opacity(style.grainOpacity)
+        ZStack {
+          litBody(size: size, baseRadius: baseRadius)
+          // Fine stipple first, so the visible fibers sit on a dense base.
+          MarimoStipple(geometry: geometry, shades: shades, style: style)
+          MarimoFibers(geometry: geometry, shades: shades, style: style)
+          MarimoGrain(
+            geometry: geometry, dark: color(MarimoPalette.shadow), style: style
+          )
+          .blendMode(.softLight)
+          .opacity(style.grainOpacity)
+        }
+        // Feather the silhouette so the solid body fades into the rim fibers rather
+        // than ending at a crisp outline that reads as a hard boundary.
+        .mask {
+          MarimoBlob(geometry: geometry)
+            .fill(.black)
+            .blur(radius: baseRadius * style.edgeFeatherFraction)
+        }
+        // Rim fibers stay unmasked so individual strands still poke past the now-soft
+        // edge and blend the body into its surroundings.
         MarimoRimFuzz(geometry: geometry, shades: shades, style: style)
       }
     }
@@ -210,6 +245,12 @@ private struct MarimoFibers: View {
       var rng = SplitMix64Generator(seed: geometry.seed ^ 0xF1BE_0001)
       let center = geometry.center(in: size)
       let base = geometry.baseRadius(in: size)
+      // Shared with the stipple so the two layers clump together; the flow field
+      // gives neighbouring fibers a coherent direction.
+      let clump = FlowNoise(
+        seed: geometry.seed ^ 0xC1A3_7777, frequency: style.fiberClumpFrequency, octaves: 2)
+      let flow = FlowNoise(
+        seed: geometry.seed ^ 0xF10A_2222, frequency: style.fiberFlowFrequency, octaves: 2)
 
       // One Path per shade band; the whole field draws in `shades.count` strokes
       // regardless of fiber count.
@@ -221,32 +262,78 @@ private struct MarimoFibers: View {
         let placeAngle = Double.random(in: 0..<(2 * .pi), using: &rng)
         let dx = cos(placeAngle) * position
         let dy = sin(placeAngle) * position
+        let nx = dx / base
+        let ny = dy / base
         let point = CGPoint(x: center.x + dx, y: center.y + dy)
 
-        // Loosely follow the outward radial so fibers read as a weave, not a
-        // starburst: blend the radial angle with a random one, then jitter.
-        let radial = atan2(dy, dx)
-        let random = Double.random(in: 0..<(2 * .pi), using: &rng)
-        let blended = lerpAngle(random, radial, style.fiberRadialBias)
+        // Follow a coherent flow field, combing toward the tangent (along the
+        // surface) as fibers approach the rim, then add a little jitter.
+        let tangential = atan2(dy, dx) + .pi / 2
+        let flowAngle = flow.value(nx, ny) * .pi
+        let distanceFraction = min(position / base, 1)
+        let coherent = lerpAngle(flowAngle, tangential, style.fiberSurfaceFollow * distanceFraction)
         let orientation =
-          blended + Double.random(in: -style.fiberAngleJitter...style.fiberAngleJitter, using: &rng)
+          coherent
+          + Double.random(in: -style.fiberAngleJitter...style.fiberAngleJitter, using: &rng)
 
-        let length = base * Double.random(in: style.fiberLength, using: &rng)
+        let length =
+          base * biasedRandom(style.fiberLength, bias: style.fiberLengthBias, using: &rng)
         let half = length / 2
         let start = CGPoint(
           x: point.x - cos(orientation) * half, y: point.y - sin(orientation) * half)
         let end = CGPoint(
           x: point.x + cos(orientation) * half, y: point.y + sin(orientation) * half)
 
-        let lit = sphereDiffuse(dx: dx, dy: dy, radius: base, style: style)
-        let jitter = Double.random(
-          in: -style.fiberShadeJitter...style.fiberShadeJitter, using: &rng)
-        addSegment(to: &bands[bandIndex(lit + jitter, count: shades.count)], start, end)
+        // Tone from the lit sphere, pushed by the clump field into denser/sparser
+        // patches, plus a little per-fiber jitter.
+        let lit =
+          sphereDiffuse(dx: dx, dy: dy, radius: base, style: style)
+          + style.fiberClumpStrength * clump.value(nx, ny)
+          + Double.random(in: -style.fiberShadeJitter...style.fiberShadeJitter, using: &rng)
+        addSegment(to: &bands[bandIndex(lit, count: shades.count)], start, end)
       }
 
       strokeBands(
         bands, shades: shades, opacity: style.fiberOpacity, width: style.fiberWidth,
         into: context)
+    }
+  }
+}
+
+/// A fine stipple beneath the fibers, lit and clumped by the same fields, so the
+/// body reads as packed density rather than a few sparse strokes.
+private struct MarimoStipple: View {
+  let geometry: MarimoGeometry
+  let shades: [Color]
+  let style: MarimoStyle
+
+  var body: some View {
+    Canvas { context, size in
+      context.clip(to: geometry.path(in: size))
+      var rng = SplitMix64Generator(seed: geometry.seed ^ 0x5719_3333)
+      let center = geometry.center(in: size)
+      let base = geometry.baseRadius(in: size)
+      let clump = FlowNoise(
+        seed: geometry.seed ^ 0xC1A3_7777, frequency: style.fiberClumpFrequency, octaves: 2)
+
+      var bands = [Path](repeating: Path(), count: shades.count)
+      for _ in 0..<style.stippleCount {
+        let position = Double.random(in: 0...1, using: &rng).squareRoot() * base * 0.99
+        let angle = Double.random(in: 0..<(2 * .pi), using: &rng)
+        let dx = cos(angle) * position
+        let dy = sin(angle) * position
+        let lit =
+          sphereDiffuse(dx: dx, dy: dy, radius: base, style: style)
+          + style.fiberClumpStrength * clump.value(dx / base, dy / base)
+          + Double.random(in: -style.fiberShadeJitter...style.fiberShadeJitter, using: &rng)
+        let radius = style.stippleDotRadius
+        let dot = CGPoint(x: center.x + dx, y: center.y + dy)
+        bands[bandIndex(lit, count: shades.count)].addEllipse(
+          in: CGRect(x: dot.x - radius, y: dot.y - radius, width: radius * 2, height: radius * 2))
+      }
+      for index in bands.indices {
+        context.fill(bands[index], with: .color(shades[index].opacity(style.stippleOpacity)))
+      }
     }
   }
 }
@@ -271,7 +358,7 @@ private struct MarimoRimFuzz: View {
         let anchor = geometry.outlinePoint(at: angle, in: size)
         let outward =
           angle + Double.random(in: -style.fuzzOutwardJitter...style.fuzzOutwardJitter, using: &rng)
-        let length = base * Double.random(in: style.fuzzLength, using: &rng)
+        let length = base * biasedRandom(style.fuzzLength, bias: style.fuzzLengthBias, using: &rng)
         let start = CGPoint(
           x: anchor.x - cos(outward) * length * style.fuzzInsetFraction,
           y: anchor.y - sin(outward) * length * style.fuzzInsetFraction)
@@ -355,6 +442,54 @@ private nonisolated func strokeBands(
   }
 }
 
+/// Draws a value in `range`, biased toward the lower bound by `bias` (1 = uniform,
+/// higher = mostly low with a few high), so lengths look organic, not uniform.
+private nonisolated func biasedRandom(
+  _ range: ClosedRange<Double>, bias: Double, using rng: inout SplitMix64Generator
+) -> Double {
+  let t = pow(Double.random(in: 0...1, using: &rng), bias)
+  return range.lowerBound + (range.upperBound - range.lowerBound) * t
+}
+
+/// A cheap, seeded, smooth 2D field built from a few sine octaves, used both as a
+/// low-frequency clump field (denser/sparser tone patches) and a flow field
+/// (coherent fiber direction). Values land roughly in `-1...1`.
+///
+/// `nonisolated`: pure math, evaluated inside `Canvas` closures.
+private nonisolated struct FlowNoise {
+  private let terms: [(fx: Double, fy: Double, px: Double, py: Double, weight: Double)]
+  private let totalWeight: Double
+
+  init(seed: UInt64, frequency: Double, octaves: Int) {
+    var rng = SplitMix64Generator(seed: seed)
+    var terms: [(fx: Double, fy: Double, px: Double, py: Double, weight: Double)] = []
+    var total = 0.0
+    for octave in 0..<max(octaves, 1) {
+      let baseFrequency = frequency * Double(octave + 1)
+      let weight = 1.0 / Double(octave + 1)
+      terms.append(
+        (
+          fx: baseFrequency * (0.7 + 0.6 * Double.random(in: 0..<1, using: &rng)),
+          fy: baseFrequency * (0.7 + 0.6 * Double.random(in: 0..<1, using: &rng)),
+          px: Double.random(in: 0..<(2 * .pi), using: &rng),
+          py: Double.random(in: 0..<(2 * .pi), using: &rng),
+          weight: weight
+        ))
+      total += weight
+    }
+    self.terms = terms
+    self.totalWeight = total
+  }
+
+  func value(_ x: Double, _ y: Double) -> Double {
+    var sum = 0.0
+    for term in terms {
+      sum += term.weight * sin(term.fx * x + term.px) * sin(term.fy * y + term.py)
+    }
+    return sum / totalWeight
+  }
+}
+
 /// Appends one line segment to a shared path, so many fibers batch into a single
 /// stroke. `nonisolated` for use inside `Canvas` closures.
 private nonisolated func addSegment(to path: inout Path, _ start: CGPoint, _ end: CGPoint) {
@@ -373,7 +508,10 @@ private nonisolated func lerpAngle(_ from: Double, _ to: Double, _ t: Double) ->
 
 /// Small deterministic PRNG so texture placement is seeded and reproducible
 /// without pulling the domain's private generator into the view layer.
-private struct SplitMix64Generator: RandomNumberGenerator {
+///
+/// `nonisolated`: constructed and advanced inside `Canvas` closures and noise
+/// fields, all outside the main actor.
+private nonisolated struct SplitMix64Generator: RandomNumberGenerator {
   private var state: UInt64
 
   init(seed: UInt64) { state = seed }

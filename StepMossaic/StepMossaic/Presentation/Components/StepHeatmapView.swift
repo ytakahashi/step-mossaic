@@ -50,8 +50,6 @@ struct StepHeatmapView: View {
           .onChange(of: proxy.size.width) { _, newValue in availableWidth = newValue }
       }
     }
-    // Runs once per appearance: backfills on first launch, then differential-syncs.
-    .task { await model.start() }
   }
 
   @ViewBuilder

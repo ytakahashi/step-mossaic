@@ -47,12 +47,14 @@ enum HeatmapRange: CaseIterable, Identifiable, Sendable {
   }
 }
 
-/// Drives the Home heatmap: triggers the cache sync, then renders the stored
-/// daily totals over the selected range as an aggregated `StepHeatmap`.
+/// Drives the Home heatmap: renders the stored daily totals over the selected
+/// range as an aggregated `StepHeatmap`.
 ///
-/// Aggregation itself lives in `StepHeatmapGenerator`; this view model only wires
-/// the sync, the store reads, and the display range to it, exposing a single
-/// `phase` for the view to switch on.
+/// Cache-render only — it does not own the sync. `StepSyncModel` owns the single
+/// sync lifecycle; this model mirrors that shared phase via `observe(_:)` and
+/// reads the cache once sync settles. Aggregation itself lives in
+/// `StepHeatmapGenerator`; this model wires the store reads and display range to
+/// it, exposing a single `phase` for the view to switch on.
 @MainActor
 @Observable
 final class HeatmapViewModel {
@@ -124,24 +126,22 @@ final class HeatmapViewModel {
     return Array(symbols[offset...] + symbols[..<offset])
   }
 
-  /// Syncs the cache (reporting backfill progress) and then renders the result.
+  /// Mirrors the shared sync lifecycle into this section's own phase.
   ///
-  /// A sync failure is swallowed: any already-cached data is still rendered, since
-  /// read-only HealthKit access can't be confirmed and an empty result is shown as
-  /// no data rather than an error.
-  func start() async {
-    do {
-      try await coordinator.sync { [weak self] progress in
-        // Only the long initial backfill drives a progress phase; the quick
-        // differential sync stays on `.loading` to avoid a flash of progress UI.
-        if case .backfilling(let completed, let total) = progress {
-          self?.phase = .backfilling(completedDays: completed, totalDays: total)
-        }
-      }
-    } catch {
-      // Fall through to render whatever is cached.
+  /// Driven by the owner (`StepSyncModel`) so the heatmap shows the import progress
+  /// in its own area without itself triggering a sync:
+  /// - `.loading` / `.backfilling` reflect straight through.
+  /// - `.ready` / `.empty` re-render from the cache; `reload()` then decides
+  ///   `.ready` vs `.empty` from coverage, staying consistent with the owner.
+  func observe(_ syncPhase: StepSyncModel.Phase) async {
+    switch syncPhase {
+    case .loading:
+      phase = .loading
+    case .backfilling(let completed, let total):
+      phase = .backfilling(completedDays: completed, totalDays: total)
+    case .ready, .empty:
+      await reload()
     }
-    await reload()
   }
 
   /// Switches the displayed range and re-renders from the cache (no re-sync).

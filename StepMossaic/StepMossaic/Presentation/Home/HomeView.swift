@@ -2,10 +2,12 @@ import SwiftUI
 
 struct HomeView: View {
   @State private var model: HomeViewModel
+  @State private var syncModel: StepSyncModel
   @State private var heatmapModel: HeatmapViewModel
 
-  init(model: HomeViewModel, heatmapModel: HeatmapViewModel) {
+  init(model: HomeViewModel, syncModel: StepSyncModel, heatmapModel: HeatmapViewModel) {
     _model = State(initialValue: model)
+    _syncModel = State(initialValue: syncModel)
     _heatmapModel = State(initialValue: heatmapModel)
   }
 
@@ -26,12 +28,17 @@ struct HomeView: View {
     // phase changes; `.task(id:)` cancels the loop on disappear or phase change.
     .task { model.refreshPhase() }
     .task(id: model.phase) { await model.activate() }
-    // The heatmap self-syncs on appear, but that runs before access is granted.
-    // When the user grants it from the prompt, re-sync so the heatmap backfills
-    // instead of staying on the empty state until the next launch.
+    // Own the single cache sync here and fan its shared phase out to each
+    // cache-backed section, so the sections render one sync rather than each
+    // racing its own backfill.
+    .task { await syncModel.start() }
+    .task(id: syncModel.observationKey) { await heatmapModel.observe(syncModel.phase) }
+    // The sync above runs before access is granted. When the user grants it from
+    // the prompt, re-sync so the cache backfills instead of staying on the empty
+    // state until the next launch.
     .onChange(of: model.phase) { oldPhase, newPhase in
       guard oldPhase == .needsAuthorization, newPhase == .ready else { return }
-      Task { await heatmapModel.start() }
+      Task { await syncModel.start() }
     }
   }
 
@@ -69,6 +76,7 @@ struct HomeView: View {
   let environment = AppEnvironment(modelContainer: try! AppModelContainer.make(inMemory: true))
   HomeView(
     model: environment.makeHomeViewModel(),
+    syncModel: environment.syncModel,
     heatmapModel: environment.makeHeatmapViewModel()
   )
 }

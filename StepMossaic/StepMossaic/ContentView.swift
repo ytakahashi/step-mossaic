@@ -7,6 +7,7 @@ struct ContentView: View {
     TabView {
       HomeView(
         model: environment.makeHomeViewModel(),
+        syncModel: environment.syncModel,
         heatmapModel: environment.makeHeatmapViewModel()
       )
       .tabItem {

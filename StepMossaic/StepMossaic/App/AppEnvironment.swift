@@ -21,20 +21,26 @@ final class AppEnvironment {
   private let coordinator: StepSyncCoordinator
   private let calendar: Calendar
 
+  /// The single cache-sync owner, shared across every cache-backed section so the
+  /// app drives one sync rather than one per view model.
+  let syncModel: StepSyncModel
+
   init(modelContainer: ModelContainer, calendar: Calendar = .current) {
     let context = ModelContext(modelContainer)
     let source = HealthKitStepSource(calendar: calendar)
     let stepLogStore = SwiftDataStepLogStore(context: context, calendar: calendar)
-
-    self.source = source
-    self.stepLogStore = stepLogStore
-    self.coordinator = StepSyncCoordinator(
+    let coordinator = StepSyncCoordinator(
       source: source,
       stepLogStore: stepLogStore,
       calendar: calendar,
       now: { Date() }
     )
+
+    self.source = source
+    self.stepLogStore = stepLogStore
+    self.coordinator = coordinator
     self.calendar = calendar
+    self.syncModel = StepSyncModel(coordinator: coordinator)
   }
 
   /// Builds the Home today-steps view model bound to the shared step source.

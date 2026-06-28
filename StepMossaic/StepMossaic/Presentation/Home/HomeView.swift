@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct HomeView: View {
-  @State private var model = HomeViewModel()
+  @State private var model: HomeViewModel
+
+  init(model: HomeViewModel) {
+    _model = State(initialValue: model)
+  }
 
   var body: some View {
     NavigationStack {
@@ -53,5 +57,5 @@ struct HomeView: View {
 }
 
 #Preview {
-  HomeView()
+  HomeView(model: HomeViewModel())
 }

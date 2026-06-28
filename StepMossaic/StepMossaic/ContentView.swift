@@ -1,10 +1,11 @@
-import SwiftData
 import SwiftUI
 
 struct ContentView: View {
+  @Environment(AppEnvironment.self) private var environment
+
   var body: some View {
     TabView {
-      HomeView()
+      HomeView(model: environment.makeHomeViewModel())
         .tabItem {
           Label("Home", systemImage: "circle.grid.2x2")
         }
@@ -24,10 +25,5 @@ struct ContentView: View {
 
 #Preview {
   ContentView()
-    .modelContainer(
-      for: [
-        DailyStepLogRecord.self,
-        FrozenMarimoRecord.self,
-        SyncAnchorRecord.self,
-      ], inMemory: true)
+    .environment(AppEnvironment(modelContainer: try! AppModelContainer.make(inMemory: true)))
 }

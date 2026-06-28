@@ -3,11 +3,18 @@ import SwiftUI
 struct HomeView: View {
   @State private var model: HomeViewModel
   @State private var syncModel: StepSyncModel
+  @State private var marimoModel: GrowingMarimoViewModel
   @State private var heatmapModel: HeatmapViewModel
 
-  init(model: HomeViewModel, syncModel: StepSyncModel, heatmapModel: HeatmapViewModel) {
+  init(
+    model: HomeViewModel,
+    syncModel: StepSyncModel,
+    marimoModel: GrowingMarimoViewModel,
+    heatmapModel: HeatmapViewModel
+  ) {
     _model = State(initialValue: model)
     _syncModel = State(initialValue: syncModel)
+    _marimoModel = State(initialValue: marimoModel)
     _heatmapModel = State(initialValue: heatmapModel)
   }
 
@@ -16,7 +23,7 @@ struct HomeView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 28) {
           todaySection
-          GrowingMarimoPlaceholder()
+          GrowingMarimoView(model: marimoModel)
           StepHeatmapView(model: heatmapModel)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -33,6 +40,7 @@ struct HomeView: View {
     // racing its own backfill.
     .task { await syncModel.start() }
     .task(id: syncModel.observationKey) { await heatmapModel.observe(syncModel.phase) }
+    .task(id: syncModel.observationKey) { await marimoModel.observe(syncModel.phase) }
     // The sync above runs before access is granted. When the user grants it from
     // the prompt, re-sync so the cache backfills instead of staying on the empty
     // state until the next launch.
@@ -77,6 +85,7 @@ struct HomeView: View {
   HomeView(
     model: environment.makeHomeViewModel(),
     syncModel: environment.syncModel,
+    marimoModel: environment.makeGrowingMarimoViewModel(),
     heatmapModel: environment.makeHeatmapViewModel()
   )
 }

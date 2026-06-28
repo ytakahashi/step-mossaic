@@ -29,11 +29,16 @@ final class AppEnvironment {
     let context = ModelContext(modelContainer)
     let source = HealthKitStepSource(calendar: calendar)
     let stepLogStore = SwiftDataStepLogStore(context: context, calendar: calendar)
+    // Marimo tuning is assembled here, in the composition root, rather than left as
+    // a generator default — this is the seam a future Settings screen feeds a
+    // persisted `sizeReferenceMonthlySteps` (the monthly-steps reference) into.
+    let marimoConfig = MarimoGenerationConfig()
     let coordinator = StepSyncCoordinator(
       source: source,
       stepLogStore: stepLogStore,
       calendar: calendar,
-      now: { Date() }
+      now: { Date() },
+      marimoConfig: marimoConfig
     )
 
     self.source = source
@@ -56,5 +61,10 @@ final class AppEnvironment {
       calendar: calendar,
       today: { Date() }
     )
+  }
+
+  /// Builds the growing-marimo view model bound to the shared sync coordinator.
+  func makeGrowingMarimoViewModel() -> GrowingMarimoViewModel {
+    GrowingMarimoViewModel(coordinator: coordinator)
   }
 }

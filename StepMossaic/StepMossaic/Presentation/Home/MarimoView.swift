@@ -11,6 +11,13 @@ struct MarimoStyle {
   var sampleCount = 160
   /// Fraction of the half-min dimension the largest marimo may reach.
   var maxExtentFraction = 0.86
+  /// Scales the domain `bumpiness` (0…1) down to the rendered wobble amount.
+  ///
+  /// A rendering taste, like the palette's colour gain: the full domain range
+  /// looks too distorted to read as a marimo, so map it into a gentler `0…scale`
+  /// band. Kept here (not in the domain) so the stored bumpiness stays 0…1 and a
+  /// later taste change re-renders without recomputing.
+  var bumpinessScale = 0.4
 
   /// Direction the body is lit from, as a unit point within the marimo's bounds,
   /// used for the base gradient. The fiber shading uses `lightDirection`.
@@ -126,7 +133,8 @@ struct MarimoView: View {
 
   private var geometry: MarimoGeometry {
     MarimoGeometry(
-      bumpiness: parameters.bumpiness,
+      // Render a gentler wobble than the raw domain value, which looks distorted.
+      bumpiness: parameters.bumpiness * style.bumpinessScale,
       seed: parameters.seed,
       sizeUnit: parameters.sizeUnit,
       sampleCount: style.sampleCount,

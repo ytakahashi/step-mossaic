@@ -8,6 +8,7 @@ struct ContentView: View {
       HomeView(
         model: environment.makeHomeViewModel(),
         syncModel: environment.syncModel,
+        marimoModel: environment.makeGrowingMarimoViewModel(),
         heatmapModel: environment.makeHeatmapViewModel()
       )
       .tabItem {

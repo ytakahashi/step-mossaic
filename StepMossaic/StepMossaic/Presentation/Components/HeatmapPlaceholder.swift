@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Static stand-in heatmap for screens not yet wired to live data (the Shelf
+/// month detail). Home uses the live `StepHeatmapView`.
 struct HeatmapPlaceholder: View {
   var title: String
 

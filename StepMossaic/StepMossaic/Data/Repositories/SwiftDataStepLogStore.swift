@@ -73,6 +73,15 @@ extension SwiftDataStepLogStore: @MainActor StepLogStore {
     return try context.fetch(descriptor).map { $0.toDomain(calendar: calendar) }
   }
 
+  /// Returns the earliest stored day, fetching a single row rather than scanning.
+  func earliestLoggedDay() throws -> Day? {
+    var descriptor = FetchDescriptor<DailyStepLogRecord>(
+      sortBy: [SortDescriptor(\.date, order: .forward)]
+    )
+    descriptor.fetchLimit = 1
+    return try context.fetch(descriptor).first?.toDomain(calendar: calendar).day
+  }
+
   func anchorState() throws -> SyncAnchor? {
     try anchorRecord()?.toDomain()
   }

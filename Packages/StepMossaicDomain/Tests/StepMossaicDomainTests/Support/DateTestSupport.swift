@@ -23,6 +23,22 @@ enum TestCalendar {
   }()
 }
 
+/// Builds a noon `Date` from year/month/day components, so callers that need a
+/// raw instant (e.g. a sync clock or earliest-sample date) stay deterministic.
+func makeDate(
+  _ year: Int,
+  _ month: Int,
+  _ day: Int,
+  calendar: Calendar = TestCalendar.utc
+) -> Date {
+  var components = DateComponents()
+  components.year = year
+  components.month = month
+  components.day = day
+  components.hour = 12
+  return calendar.date(from: components)!
+}
+
 /// Builds a `Day` from year/month/day components using a noon timestamp, so that
 /// normalization to the start of the day is actually exercised.
 func makeDay(

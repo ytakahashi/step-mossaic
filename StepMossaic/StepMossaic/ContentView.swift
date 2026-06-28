@@ -1,13 +1,17 @@
-import SwiftData
 import SwiftUI
 
 struct ContentView: View {
+  @Environment(AppEnvironment.self) private var environment
+
   var body: some View {
     TabView {
-      HomeView()
-        .tabItem {
-          Label("Home", systemImage: "circle.grid.2x2")
-        }
+      HomeView(
+        model: environment.makeHomeViewModel(),
+        heatmapModel: environment.makeHeatmapViewModel()
+      )
+      .tabItem {
+        Label("Home", systemImage: "circle.grid.2x2")
+      }
 
       ShelfView()
         .tabItem {
@@ -24,10 +28,5 @@ struct ContentView: View {
 
 #Preview {
   ContentView()
-    .modelContainer(
-      for: [
-        DailyStepLogRecord.self,
-        FrozenMarimoRecord.self,
-        SyncAnchorRecord.self,
-      ], inMemory: true)
+    .environment(AppEnvironment(modelContainer: try! AppModelContainer.make(inMemory: true)))
 }

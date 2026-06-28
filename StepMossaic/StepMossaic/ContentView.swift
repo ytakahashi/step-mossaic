@@ -5,10 +5,13 @@ struct ContentView: View {
 
   var body: some View {
     TabView {
-      HomeView(model: environment.makeHomeViewModel())
-        .tabItem {
-          Label("Home", systemImage: "circle.grid.2x2")
-        }
+      HomeView(
+        model: environment.makeHomeViewModel(),
+        heatmapModel: environment.makeHeatmapViewModel()
+      )
+      .tabItem {
+        Label("Home", systemImage: "circle.grid.2x2")
+      }
 
       ShelfView()
         .tabItem {

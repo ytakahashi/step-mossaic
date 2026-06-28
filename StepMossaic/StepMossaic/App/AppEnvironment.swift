@@ -41,4 +41,14 @@ final class AppEnvironment {
   func makeHomeViewModel() -> HomeViewModel {
     HomeViewModel(source: source, calendar: calendar)
   }
+
+  /// Builds the heatmap view model bound to the shared sync coordinator and cache.
+  func makeHeatmapViewModel() -> HeatmapViewModel {
+    HeatmapViewModel(
+      coordinator: coordinator,
+      stepLogStore: stepLogStore,
+      calendar: calendar,
+      today: { Date() }
+    )
+  }
 }

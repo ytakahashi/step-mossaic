@@ -129,32 +129,35 @@ func differentialSyncFetchesOnlyRecentWindow() async throws {
 }
 
 @MainActor
-@Test("Coverage maps the earliest sample and anchor to the data range")
-func coverageMapsEarliestSampleAndAnchor() async throws {
-  // Arrange
-  let source = FakeStepSource(earliest: makeDate(2026, 1, 1))
-  let store = FakeStepLogStore(anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 2, 10)))
-  let coordinator = makeCoordinator(source: source, store: store, today: makeDate(2026, 2, 28))
+@Test("Coverage maps the earliest cached day and anchor to the data range")
+func coverageMapsCacheAndAnchor() throws {
+  // Arrange: a cache holding logs back to Jan 1, synced through Feb 10.
+  let store = FakeStepLogStore(
+    seedLogs: [DailySteps(day: makeDay(2026, 1, 1), steps: 5_000)],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 2, 10))
+  )
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 2, 28))
 
-  // Act
-  let coverage = try await coordinator.coverage()
+  // Act: no live source query is made; coverage comes from the cache.
+  let coverage = try coordinator.coverage()
 
-  // Assert: first available day is the earliest sample (not the earliest log),
-  // last synced day comes from the anchor (not today).
+  // Assert: first available day is the earliest cached day, last synced day comes
+  // from the anchor (not today).
   #expect(coverage.firstAvailableDay == makeDay(2026, 1, 1))
   #expect(coverage.lastSyncedDay == makeDay(2026, 2, 10))
 }
 
 @MainActor
-@Test("Coverage has no first available day when there are no samples")
-func coverageHasNoFirstAvailableDayWithoutSamples() async throws {
-  // Arrange: no samples and no anchor yet.
+@Test("Coverage has no first available day when the cache is empty")
+func coverageEmptyWhenCacheEmpty() throws {
+  // Arrange: nothing synced or stored yet.
   let coordinator = makeCoordinator(
-    source: FakeStepSource(earliest: nil), store: FakeStepLogStore(), today: makeDate(2026, 2, 10)
+    source: FakeStepSource(), store: FakeStepLogStore(), today: makeDate(2026, 2, 10)
   )
 
   // Act
-  let coverage = try await coordinator.coverage()
+  let coverage = try coordinator.coverage()
 
   // Assert: no coverage; last synced day falls back to today before any sync.
   #expect(coverage.firstAvailableDay == nil)

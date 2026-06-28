@@ -2,9 +2,11 @@ import SwiftUI
 
 struct HomeView: View {
   @State private var model: HomeViewModel
+  @State private var heatmapModel: HeatmapViewModel
 
-  init(model: HomeViewModel) {
+  init(model: HomeViewModel, heatmapModel: HeatmapViewModel) {
     _model = State(initialValue: model)
+    _heatmapModel = State(initialValue: heatmapModel)
   }
 
   var body: some View {
@@ -13,7 +15,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 28) {
           todaySection
           GrowingMarimoPlaceholder()
-          HeatmapPlaceholder(title: "Last 3 months")
+          StepHeatmapView(model: heatmapModel)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -24,6 +26,13 @@ struct HomeView: View {
     // phase changes; `.task(id:)` cancels the loop on disappear or phase change.
     .task { model.refreshPhase() }
     .task(id: model.phase) { await model.activate() }
+    // The heatmap self-syncs on appear, but that runs before access is granted.
+    // When the user grants it from the prompt, re-sync so the heatmap backfills
+    // instead of staying on the empty state until the next launch.
+    .onChange(of: model.phase) { oldPhase, newPhase in
+      guard oldPhase == .needsAuthorization, newPhase == .ready else { return }
+      Task { await heatmapModel.start() }
+    }
   }
 
   @ViewBuilder
@@ -57,5 +66,9 @@ struct HomeView: View {
 }
 
 #Preview {
-  HomeView(model: HomeViewModel())
+  let environment = AppEnvironment(modelContainer: try! AppModelContainer.make(inMemory: true))
+  HomeView(
+    model: environment.makeHomeViewModel(),
+    heatmapModel: environment.makeHeatmapViewModel()
+  )
 }

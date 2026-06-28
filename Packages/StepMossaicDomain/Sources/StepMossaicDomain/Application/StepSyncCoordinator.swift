@@ -59,25 +59,26 @@ public final class StepSyncCoordinator {
     onProgress(.finished)
   }
 
-  /// Builds the data coverage the domain aggregates over.
+  /// Builds the data coverage the domain aggregates over, from the persisted
+  /// cache alone — no live source query.
   ///
-  /// `firstAvailableDay` is derived from the earliest *sample* (a cheap limit-1
-  /// query), not the earliest stored log: days between the first sample and today
-  /// with no recorded steps are available 0-step days, not gaps. `lastSyncedDay`
-  /// comes from the anchor, falling back to today before the first sync.
-  public func coverage() async throws -> StepDataCoverage {
-    let earliest = try await source.earliestSampleDate()
-    let firstAvailableDay = earliest.map { Day(containing: $0, calendar: calendar) }
-
-    let lastSyncedDay: Day
-    if let anchor = try stepLogStore.anchorState() {
-      lastSyncedDay = Day(containing: anchor.lastSyncedDate, calendar: calendar)
-    } else {
-      lastSyncedDay = today
+  /// Rendering must survive HealthKit being momentarily unavailable or access not
+  /// yet (re)resolved, so coverage is derived from what has been synced:
+  /// - `firstAvailableDay` is the earliest cached day. Since 0-step days are not
+  ///   stored, that is the user's first day with samples — the same day a live
+  ///   earliest-sample query would report — and it also stays consistent with
+  ///   differential sync, which does not backfill older history.
+  /// - `lastSyncedDay` is how far sync has reached (the anchor), falling back to
+  ///   today before the first sync so an empty interval is still valid.
+  public func coverage() throws -> StepDataCoverage {
+    guard let anchor = try stepLogStore.anchorState() else {
+      return StepDataCoverage(firstAvailableDay: nil, lastSyncedDay: today)
     }
+    let lastSyncedDay = Day(containing: anchor.lastSyncedDate, calendar: calendar)
+    let firstAvailableDay = try stepLogStore.earliestLoggedDay()
 
-    // Keep the `firstAvailableDay <= lastSyncedDay` invariant even if data exists
-    // but no sync has been recorded, or the clock moved backward.
+    // Keep the `firstAvailableDay <= lastSyncedDay` invariant even if a log
+    // exists past the anchor (e.g. the clock moved backward).
     let clampedLast = firstAvailableDay.map { max($0, lastSyncedDay) } ?? lastSyncedDay
     return StepDataCoverage(firstAvailableDay: firstAvailableDay, lastSyncedDay: clampedLast)
   }

@@ -29,6 +29,10 @@ final class FakeStepLogStore: StepLogStore {
       .sorted { $0.day < $1.day }
   }
 
+  func earliestLoggedDay() throws -> Day? {
+    storage.keys.min()
+  }
+
   func anchorState() throws -> SyncAnchor? { anchor }
 
   func saveAnchor(_ anchor: SyncAnchor) throws { self.anchor = anchor }

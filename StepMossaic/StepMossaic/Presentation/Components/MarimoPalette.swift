@@ -16,15 +16,23 @@ import SwiftUI
 enum MarimoPalette {
   private typealias HSB = (hue: Double, saturation: Double, brightness: Double)
 
-  /// Normalizes a `colorLevel` to a tonal fraction where `positiveLevelCount` maps
-  /// to `1`.
+  /// Extra depth applied on top of the normalized condition.
   ///
-  /// Only the lower bound is clamped: domain values stay within `0...positiveLevelCount`,
-  /// but a tuning value above the scale is allowed to extrapolate past `1` so it
-  /// reads as an even deeper moss instead of capping.
+  /// The data only ever reaches `colorLevel == positiveLevelCount`. A gain of `1`
+  /// would map that ceiling to the mid-rich tone, which reads paler than wanted; a
+  /// gain of `2` maps it to the deep moss preferred in tuning — i.e. the domain's
+  /// `0...positiveLevelCount` spans the full `0...2×` tonal range.
+  private static let richness = 2.5
+
+  /// Normalizes a `colorLevel` to a tonal fraction, where `positiveLevelCount` maps
+  /// to `richness`.
+  ///
+  /// Only the lower bound is clamped: domain values stay within
+  /// `0...positiveLevelCount`, but a tuning value above the scale is allowed to
+  /// extrapolate further so it reads as an even deeper moss instead of capping.
   private static func fraction(colorLevel: Double, positiveLevelCount: Int) -> Double {
     let upperBound = Double(max(positiveLevelCount, 1))
-    return max(colorLevel, 0) / upperBound
+    return max(colorLevel, 0) / upperBound * richness
   }
 
   // The three tonal anchors, as functions of condition. The ramp interpolates

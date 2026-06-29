@@ -44,6 +44,28 @@ public final class StepSyncCoordinator {
 
   private var today: Day { Day(containing: now(), calendar: calendar) }
 
+  /// Relays the source's live "today changed" tick so the sync owner can keep the
+  /// cache fresh mid-session without itself depending on the `StepSource`.
+  ///
+  /// Each emission means today's samples may have changed, so the consumer should
+  /// run a differential `sync()`. Bursts are coalesced to the newest pending tick:
+  /// the cache is re-read from the source, so intermediate tick identities carry
+  /// no information and do not need one sync each. The underlying query is
+  /// foreground-only and stops when the returned stream is cancelled.
+  public func observeStepUpdates() -> AsyncStream<Void> {
+    AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      let task = Task { [source] in
+        for await _ in source.observeTodayUpdates() {
+          continuation.yield(())
+        }
+        continuation.finish()
+      }
+      continuation.onTermination = { _ in
+        task.cancel()
+      }
+    }
+  }
+
   /// Brings the cache up to date, choosing the path from the stored anchor:
   /// the first run (no anchor) backfills the whole history, later runs re-read
   /// only the window since the last sync. `onProgress` is invoked on the main

@@ -122,6 +122,73 @@ func syncReRunStaysReady() async throws {
 }
 
 @MainActor
+@Test("A live tick runs a differential sync and bumps the observation key")
+func liveTickRunsDifferentialSync() async throws {
+  // Arrange: settle on ready, then arm one live tick.
+  let source = FakeStepSource(
+    status: .requested,
+    stepsToReturn: [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)],
+    earliest: makeDate(2026, 6, 1),
+    liveTickCount: 1
+  )
+  let model = try makeModel(source: source, today: makeDate(2026, 6, 28))
+  await model.start()
+  #expect(model.completedSyncCount == 1)
+
+  // Act: the finite tick stream drains one tick, so this returns once its sync ran.
+  await model.observeLiveUpdates()
+
+  // Assert: the tick drove a differential sync that bumped the observation key
+  // (so the cache-backed sections re-render) without leaving ready.
+  #expect(model.phase == .ready)
+  #expect(model.completedSyncCount == 2)
+}
+
+@MainActor
+@Test("A live tick promotes an empty cache to ready once samples appear")
+func liveTickPromotesEmptyToReady() async throws {
+  // Arrange: the first sync finds no samples and settles empty (no anchor saved).
+  let source = FakeStepSource(status: .requested, earliest: nil)
+  let model = try makeModel(source: source, today: makeDate(2026, 6, 28))
+  await model.start()
+  #expect(model.phase == .empty)
+
+  // The user starts accruing steps mid-session; the next tick should pick them up.
+  source.earliest = makeDate(2026, 6, 28)
+  source.stepsToReturn = [DailySteps(day: makeDay(2026, 6, 28), steps: 1_200)]
+  source.liveTickCount = 1
+
+  // Act
+  await model.observeLiveUpdates()
+
+  // Assert: the tick re-ran the backfill path and promoted the section to ready.
+  #expect(model.phase == .ready)
+}
+
+@MainActor
+@Test("Rapid live ticks are coalesced into one pending follow-up sync")
+func rapidLiveTicksCoalesce() async throws {
+  // Arrange: settle on ready, then emit a burst before the observer can need each
+  // individual tick. The cache is re-read, so only one pending signal matters.
+  let source = FakeStepSource(
+    status: .requested,
+    stepsToReturn: [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)],
+    earliest: makeDate(2026, 6, 1),
+    liveTickCount: 3
+  )
+  let model = try makeModel(source: source, today: makeDate(2026, 6, 28))
+  await model.start()
+
+  // Act
+  await model.observeLiveUpdates()
+
+  // Assert: the burst can cause the current refresh plus one pending follow-up,
+  // but it does not replay every stale tick as its own sync.
+  #expect(model.phase == .ready)
+  #expect(model.completedSyncCount == 3)
+}
+
+@MainActor
 @Test("An overlapping start queues one follow-up sync instead of dropping it")
 func syncQueuesFollowUpWhenStartOverlaps() async throws {
   // Arrange: the in-flight sync sees no samples, then the queued follow-up sees data.

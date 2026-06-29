@@ -41,6 +41,14 @@ struct HomeView: View {
     // cache-backed section, so the sections render one sync rather than each
     // racing its own backfill.
     .task { await syncModel.start() }
+    // Keep the cache fresh while foregrounded after Health access is resolved:
+    // live step ticks run a differential sync, so "This month" and the marimo
+    // grow mid-session rather than only on launch/foreground re-entry. Keying by
+    // phase recreates the Health observer after the user grants access.
+    .task(id: model.phase) {
+      guard model.phase == .ready else { return }
+      await syncModel.observeLiveUpdates()
+    }
     .task(id: syncModel.observationKey) { await heatmapModel.observe(syncModel.phase) }
     .task(id: syncModel.observationKey) { await marimoModel.observe(syncModel.phase) }
     // The sync above runs before access is granted. When the user grants it from

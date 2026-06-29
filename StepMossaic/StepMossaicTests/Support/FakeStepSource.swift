@@ -9,16 +9,23 @@ final class FakeStepSource: StepSource, @unchecked Sendable {
   var status: HealthAuthorizationStatus
   var stepsToReturn: [DailySteps]
   var earliest: Date?
+  /// Number of live ticks `observeTodayUpdates()` should emit before finishing.
+  /// Defaults to 0, so the stream finishes immediately like a source with no live
+  /// updates. A finite count keeps `observeLiveUpdates()` deterministic in tests:
+  /// the loop returns once these ticks have been drained and their syncs ran.
+  var liveTickCount = 0
   private(set) var requestAuthorizationCount = 0
 
   init(
     status: HealthAuthorizationStatus = .notDetermined,
     stepsToReturn: [DailySteps] = [],
-    earliest: Date? = nil
+    earliest: Date? = nil,
+    liveTickCount: Int = 0
   ) {
     self.status = status
     self.stepsToReturn = stepsToReturn
     self.earliest = earliest
+    self.liveTickCount = liveTickCount
   }
 
   func authorizationStatus() -> HealthAuthorizationStatus { status }
@@ -34,6 +41,10 @@ final class FakeStepSource: StepSource, @unchecked Sendable {
   func dailySteps(in interval: DayInterval) async throws -> [DailySteps] { stepsToReturn }
 
   func observeTodayUpdates() -> AsyncStream<Void> {
-    AsyncStream { $0.finish() }
+    let count = liveTickCount
+    return AsyncStream { continuation in
+      for _ in 0..<count { continuation.yield(()) }
+      continuation.finish()
+    }
   }
 }

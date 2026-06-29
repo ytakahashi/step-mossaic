@@ -77,6 +77,21 @@ final class StepSyncModel {
     } while needsFollowUpSync
   }
 
+  /// Keeps the cache fresh during a foreground session: each live tick runs a
+  /// differential `start()`, which (once settled) bumps `completedSyncCount`
+  /// without changing the visible phase, so the cache-backed sections re-render
+  /// through their existing `observe` path. Empty caches with no anchor yet can
+  /// even promote to `.ready` once the first samples appear.
+  ///
+  /// Driven by `.task` so the underlying observer query is torn down on disappear.
+  /// The coordinator coalesces rapid ticks to the newest pending signal, and
+  /// `start()` still folds overlaps with appearance/auth syncs into one follow-up.
+  func observeLiveUpdates() async {
+    for await _ in coordinator.observeStepUpdates() {
+      await start()
+    }
+  }
+
   /// Executes one coordinator sync and publishes its settled result.
   private func runOnce() async {
     do {

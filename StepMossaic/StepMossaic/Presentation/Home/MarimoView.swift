@@ -9,8 +9,9 @@ import SwiftUI
 struct MarimoStyle {
   /// Outline samples; dense enough that straight segments read as a smooth edge.
   var sampleCount = 160
-  /// Fraction of the half-min dimension the largest marimo may reach.
-  var maxExtentFraction = 0.86
+  /// Fraction of the half-min dimension the largest marimo may reach. Near-full,
+  /// since the hosting view adds its own outer margin around the square.
+  var maxExtentFraction = 0.95
   /// Scales the domain `bumpiness` (0…1) down to the rendered wobble amount.
   ///
   /// A rendering taste, like the palette's colour gain: the full domain range

@@ -1,3 +1,4 @@
+import StepMossaicDomain
 import SwiftUI
 
 struct HomeView: View {
@@ -20,16 +21,17 @@ struct HomeView: View {
 
   var body: some View {
     NavigationStack {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 28) {
-          todaySection
-          GrowingMarimoView(model: marimoModel)
-          StepHeatmapView(model: heatmapModel)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+      // No outer scroll: the marimo area absorbs the leftover height so the whole
+      // screen — stats, marimo, heatmap — fits without scrolling.
+      VStack(alignment: .leading, spacing: 16) {
+        header
+        GrowingMarimoView(model: marimoModel)
+        StepHeatmapView(model: heatmapModel)
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .padding()
       .navigationTitle("Step Mossaic")
+      .navigationBarTitleDisplayMode(.inline)
     }
     // Resolve the phase once on appear, then (re)run the live loop whenever the
     // phase changes; `.task(id:)` cancels the loop on disappear or phase change.
@@ -50,14 +52,25 @@ struct HomeView: View {
     }
   }
 
+  /// Today's and this month's totals, stacked tightly above the marimo.
+  private var header: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      todayStat
+      // This month's total moved here from under the marimo; redacted until the
+      // first marimo computation lands so it doesn't flash a zero.
+      StepStat(title: "This month", steps: marimoModel.parameters?.totalSteps ?? 0)
+        .redacted(reason: marimoModel.parameters == nil ? .placeholder : [])
+    }
+  }
+
   @ViewBuilder
-  private var todaySection: some View {
+  private var todayStat: some View {
     switch model.phase {
     case .loading:
-      TodayStepsCard(steps: model.todaySteps ?? 0)
+      StepStat(title: "Today", steps: model.todaySteps ?? 0)
         .redacted(reason: .placeholder)
     case .ready:
-      TodayStepsCard(steps: model.todaySteps ?? 0)
+      StepStat(title: "Today", steps: model.todaySteps ?? 0)
     case .needsAuthorization:
       authorizationPrompt
     case .unavailable:

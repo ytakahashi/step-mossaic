@@ -96,7 +96,11 @@ public final class StepSyncCoordinator {
   /// future days and days before coverage on its own, so the marimo grows from the
   /// month start through today.
   public func growingMarimo() throws -> MarimoParameters? {
-    let month = YearMonth(date: now(), calendar: calendar)
+    // Pin the render instant once so the selected month and "today" cannot split
+    // across local midnight while this read-only render is being assembled.
+    let renderDate = now()
+    let renderDay = Day(containing: renderDate, calendar: calendar)
+    let month = YearMonth(date: renderDate, calendar: calendar)
     let coverage = try coverage()
     let logs = try stepLogStore.logs(in: month.interval(calendar: calendar))
 
@@ -104,7 +108,7 @@ public final class StepSyncCoordinator {
       for: month,
       daily: logs,
       coverage: coverage,
-      today: today,
+      today: renderDay,
       calendar: calendar,
       config: marimoConfig
     )

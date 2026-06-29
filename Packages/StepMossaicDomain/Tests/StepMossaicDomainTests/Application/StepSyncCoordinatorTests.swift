@@ -207,3 +207,87 @@ func differentialSyncPinsClockAcrossMidnight() async throws {
     ])
   #expect(try store.anchorState()?.lastSyncedDate == instant(2026, 2, 10, 23, 59))
 }
+
+// MARK: - Growing marimo
+
+@MainActor
+@Test("The growing marimo aggregates the current month's cached days up to today")
+func growingMarimoAggregatesThisMonth() throws {
+  // Arrange: June 1 and June 10 measured, synced through today (June 15).
+  let store = FakeStepLogStore(
+    seedLogs: [
+      DailySteps(day: makeDay(2026, 6, 1), steps: 6_000),
+      DailySteps(day: makeDay(2026, 6, 10), steps: 9_000),
+    ],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 15))
+  )
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 6, 15))
+
+  // Act
+  let marimo = try coordinator.growingMarimo()
+
+  // Assert: the month's total drives the marimo and the size is past the floor.
+  let parameters = try #require(marimo)
+  #expect(parameters.totalSteps == 15_000)
+  #expect(parameters.sizeUnit > 0)
+}
+
+@MainActor
+@Test("The growing marimo is nil when no step data has ever existed")
+func growingMarimoNilWithoutData() throws {
+  // Arrange: an empty cache has no coverage, so the month has no available day.
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: FakeStepLogStore(), today: makeDate(2026, 6, 15))
+
+  // Act & Assert
+  #expect(try coordinator.growingMarimo() == nil)
+}
+
+@MainActor
+@Test("The growing marimo excludes days after today within the month")
+func growingMarimoExcludesFutureDays() throws {
+  // Arrange: a stray log dated past the sync anchor (June 20) must not count while
+  // today is June 15.
+  let store = FakeStepLogStore(
+    seedLogs: [
+      DailySteps(day: makeDay(2026, 6, 1), steps: 6_000),
+      DailySteps(day: makeDay(2026, 6, 20), steps: 9_999),
+    ],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 15))
+  )
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 6, 15))
+
+  // Act
+  let parameters = try #require(try coordinator.growingMarimo())
+
+  // Assert: only the in-range day counts; the future day is outside coverage.
+  #expect(parameters.totalSteps == 6_000)
+}
+
+@MainActor
+@Test("The growing marimo pins the rendered month and today to one clock read")
+func growingMarimoPinsClockAcrossMonthBoundary() throws {
+  // Arrange: the clock moves from June to July after the render instant is read.
+  // Reading month and today separately would make the generator inputs describe
+  // two different render instants.
+  let clock = TickingClock([instant(2026, 6, 30, 23, 59), instant(2026, 7, 1, 0, 0)])
+  let store = FakeStepLogStore(
+    seedLogs: [
+      DailySteps(day: makeDay(2026, 6, 1), steps: 6_000),
+      DailySteps(day: makeDay(2026, 6, 30), steps: 9_999),
+      DailySteps(day: makeDay(2026, 7, 1), steps: 7_777),
+    ],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 7, 1))
+  )
+  let coordinator = StepSyncCoordinator(
+    source: FakeStepSource(), stepLogStore: store, calendar: calendar, now: clock.now)
+
+  // Act
+  let parameters = try #require(try coordinator.growingMarimo())
+
+  // Assert: the June render uses June 30 as today, not the next clock tick.
+  #expect(clock.reads == 1)
+  #expect(parameters.totalSteps == 15_999)
+}

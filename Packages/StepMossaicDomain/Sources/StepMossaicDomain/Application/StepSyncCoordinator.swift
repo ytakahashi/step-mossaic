@@ -21,13 +21,17 @@ public final class StepSyncCoordinator {
   /// Backfill window size. The history is fetched one window at a time so progress
   /// can be reported and a long range never lands in a single HealthKit request.
   private let chunkSizeInDays: Int
+  /// Tunables for marimo generation, injected like the calendar so the same
+  /// instance drives both the heatmap's coverage and the growing marimo.
+  private let marimoConfig: MarimoGenerationConfig
 
   public init(
     source: any StepSource,
     stepLogStore: any StepLogStore,
     calendar: Calendar,
     now: @escaping @MainActor () -> Date,
-    chunkSizeInDays: Int = 365
+    chunkSizeInDays: Int = 365,
+    marimoConfig: MarimoGenerationConfig = MarimoGenerationConfig()
   ) {
     precondition(chunkSizeInDays >= 1, "StepSyncCoordinator chunkSizeInDays must be >= 1")
     self.source = source
@@ -35,6 +39,7 @@ public final class StepSyncCoordinator {
     self.calendar = calendar
     self.now = now
     self.chunkSizeInDays = chunkSizeInDays
+    self.marimoConfig = marimoConfig
   }
 
   private var today: Day { Day(containing: now(), calendar: calendar) }
@@ -81,6 +86,32 @@ public final class StepSyncCoordinator {
     // exists past the anchor (e.g. the clock moved backward).
     let clampedLast = firstAvailableDay.map { max($0, lastSyncedDay) } ?? lastSyncedDay
     return StepDataCoverage(firstAvailableDay: firstAvailableDay, lastSyncedDay: clampedLast)
+  }
+
+  /// The current month's growing marimo, computed on demand from the cached logs —
+  /// no live source query and no persistence (this month is never frozen).
+  ///
+  /// Returns `nil` when the month has no available target day yet (e.g. the cache
+  /// is empty, or coverage has not reached this month). `MarimoGenerator` drops
+  /// future days and days before coverage on its own, so the marimo grows from the
+  /// month start through today.
+  public func growingMarimo() throws -> MarimoParameters? {
+    // Pin the render instant once so the selected month and "today" cannot split
+    // across local midnight while this read-only render is being assembled.
+    let renderDate = now()
+    let renderDay = Day(containing: renderDate, calendar: calendar)
+    let month = YearMonth(date: renderDate, calendar: calendar)
+    let coverage = try coverage()
+    let logs = try stepLogStore.logs(in: month.interval(calendar: calendar))
+
+    return MarimoGenerator.parameters(
+      for: month,
+      daily: logs,
+      coverage: coverage,
+      today: renderDay,
+      calendar: calendar,
+      config: marimoConfig
+    )
   }
 
   private func backfill(

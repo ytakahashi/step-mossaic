@@ -6,7 +6,11 @@ struct MonthDetailView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 28) {
-        GrowingMarimoPlaceholder()
+        // Placeholder until the month's frozen marimo is wired up.
+        Circle()
+          .fill(Color.green.opacity(0.5))
+          .frame(width: 150, height: 150)
+          .frame(maxWidth: .infinity)
         HeatmapPlaceholder(title: monthLabel)
       }
       .padding()

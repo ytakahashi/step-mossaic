@@ -1,0 +1,58 @@
+import StepMossaicDomain
+import SwiftUI
+
+/// The Home "this month" marimo area: just the growing marimo, sized to fill the
+/// space the layout gives it.
+///
+/// The month's step total and any label live in the Home header now, so this view
+/// is only the drawing (or the import/empty states), kept square and centered so a
+/// small month still reads clearly without wasted side margin.
+struct GrowingMarimoView: View {
+  @State private var model: GrowingMarimoViewModel
+
+  init(model: GrowingMarimoViewModel) {
+    _model = State(initialValue: model)
+  }
+
+  var body: some View {
+    content
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  @ViewBuilder
+  private var content: some View {
+    switch model.phase {
+    case .loading, .backfilling:
+      placeholder
+    case .ready(let parameters):
+      MarimoView(parameters: parameters)
+        // Square and centered: fills the smaller of the available width/height, so
+        // the marimo is as large as the area allows without distorting.
+        .aspectRatio(1, contentMode: .fit)
+        // A little breathing room outside the marimo so it never touches the edges.
+        .padding(8)
+        // Interpolate as the month grows rather than snapping on each sync.
+        .animation(.easeInOut(duration: 0.4), value: parameters)
+    case .empty:
+      emptyState
+    }
+  }
+
+  /// A faint stand-in while the cache is still loading or backfilling.
+  private var placeholder: some View {
+    Circle()
+      .fill(Color.secondary.opacity(0.12))
+      .aspectRatio(1, contentMode: .fit)
+      .padding(24)
+      .redacted(reason: .placeholder)
+  }
+
+  private var emptyState: some View {
+    Text("Take a walk and this month's marimo starts to grow.")
+      .font(.subheadline)
+      .foregroundStyle(.secondary)
+      .multilineTextAlignment(.center)
+      .frame(maxWidth: .infinity)
+      .padding()
+  }
+}

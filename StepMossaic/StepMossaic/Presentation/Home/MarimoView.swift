@@ -84,6 +84,22 @@ struct MarimoStyle {
   var grainDotRadius = 0.7
 
   static let `default` = MarimoStyle()
+
+  /// A cheap preset for shelf thumbnails (~90pt). The fiber / stipple / fuzz /
+  /// grain counts are cut roughly tenfold because at thumbnail size the dense
+  /// texture is below what the eye resolves, so the full-fidelity cost buys
+  /// nothing. Shape, lighting, and palette are inherited unchanged, so a thumbnail
+  /// and its full-size render in the month detail read as the same marimo — only
+  /// the texture density differs.
+  static let shelf: MarimoStyle = {
+    var style = MarimoStyle.default
+    style.sampleCount = 96
+    style.fiberCount = 1_200
+    style.stippleCount = 1_000
+    style.fuzzCount = 1_800
+    style.grainCount = 300
+    return style
+  }()
 }
 
 /// Draws a single marimo from its `MarimoParameters`, and nothing else.

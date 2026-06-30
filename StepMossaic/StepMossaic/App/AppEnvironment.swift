@@ -72,4 +72,9 @@ final class AppEnvironment {
   func makeGrowingMarimoViewModel() -> GrowingMarimoViewModel {
     GrowingMarimoViewModel(coordinator: coordinator)
   }
+
+  /// Builds the shelf view model bound to the shared frozen-marimo store.
+  func makeShelfViewModel() -> ShelfViewModel {
+    ShelfViewModel(marimoStore: marimoStore)
+  }
 }

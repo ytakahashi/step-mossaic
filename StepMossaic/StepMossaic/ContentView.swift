@@ -15,7 +15,7 @@ struct ContentView: View {
         Label("Home", systemImage: "circle.grid.2x2")
       }
 
-      ShelfView()
+      ShelfView(model: environment.makeShelfViewModel(), syncModel: environment.syncModel)
         .tabItem {
           Label("Shelf", systemImage: "square.grid.3x3")
         }

@@ -3,6 +3,14 @@
 Guidance for agents working in this repository. See `README.md` for project
 structure, verification, and formatting commands.
 
+## Project / Xcode Workflow
+
+The `StepMossaic.xcodeproj` uses Xcode 16 synchronized groups
+(`PBXFileSystemSynchronizedRootGroup`). New source/test files added under a
+target's folder are included automatically — do not hand-edit `project.pbxproj`
+to register them. Just create the file in the correct folder (mirroring the
+existing tree) and it builds.
+
 ## Comment Conventions
 
 Comments capture what the code cannot say for itself — intent and rationale, not

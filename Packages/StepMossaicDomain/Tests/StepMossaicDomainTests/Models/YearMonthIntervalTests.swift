@@ -3,6 +3,23 @@ import Testing
 
 @testable import StepMossaicDomain
 
+@Test("StepMossaic Gregorian calendar preserves display context")
+func stepMossaicGregorianCalendarPreservesDisplayContext() {
+  // Arrange
+  var source = Calendar(identifier: .japanese)
+  source.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+  source.locale = Locale(identifier: "ja_JP")
+
+  // Act
+  let calendar = source.stepMossaicGregorian
+
+  // Assert: year/month/day interpretation is Gregorian, while local context stays
+  // inherited from the caller's calendar.
+  #expect(calendar.identifier == .gregorian)
+  #expect(calendar.timeZone == source.timeZone)
+  #expect(calendar.locale?.identifier == source.locale?.identifier)
+}
+
 @Test("Interval spans the whole month, both bounds inclusive")
 func yearMonthIntervalCoversWholeMonth() {
   // Act

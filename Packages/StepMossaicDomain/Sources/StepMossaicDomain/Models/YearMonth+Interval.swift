@@ -44,7 +44,14 @@ extension YearMonth {
 }
 
 extension Calendar {
-  var stepMossaicGregorian: Calendar {
+  /// Returns the StepMossaic calendar for interpreting stored Gregorian
+  /// year/month/day values while preserving the caller's display context.
+  ///
+  /// `YearMonth` keys are Gregorian, even when the user's current calendar is an
+  /// era-based or otherwise non-Gregorian calendar. Time zone and locale still
+  /// come from the receiver so local day boundaries and localized presentation stay
+  /// aligned with the user's environment.
+  public var stepMossaicGregorian: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
     calendar.locale = locale

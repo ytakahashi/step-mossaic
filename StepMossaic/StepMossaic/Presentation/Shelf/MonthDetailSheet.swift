@@ -61,9 +61,7 @@ struct MonthDetailSheet: View {
   /// `YearMonth` is a Gregorian storage key, so reconstruct and format through a
   /// Gregorian calendar even when the user's current calendar is non-Gregorian.
   private var monthTitle: String {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = .current
-    calendar.locale = .current
+    let calendar = Calendar.current.stepMossaicGregorian
 
     var components = DateComponents()
     components.calendar = calendar
@@ -74,8 +72,8 @@ struct MonthDetailSheet: View {
 
     let formatter = DateFormatter()
     formatter.calendar = calendar
-    formatter.locale = .current
-    formatter.timeZone = .current
+    formatter.locale = calendar.locale ?? .current
+    formatter.timeZone = calendar.timeZone
     formatter.setLocalizedDateFormatFromTemplate("yMMMM")
     return formatter.string(from: date)
   }

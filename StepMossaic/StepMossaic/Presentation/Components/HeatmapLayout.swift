@@ -92,3 +92,13 @@ extension [HeatmapSlot] {
     return nil
   }
 }
+
+extension Calendar {
+  /// Single-letter weekday symbols ordered from `firstWeekday`, so a grid's row
+  /// axis matches the column layout regardless of the locale's week start.
+  var orderedVeryShortWeekdaySymbols: [String] {
+    let symbols = veryShortWeekdaySymbols
+    let offset = firstWeekday - 1
+    return Array(symbols[offset...] + symbols[..<offset])
+  }
+}

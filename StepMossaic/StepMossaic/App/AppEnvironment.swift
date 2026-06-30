@@ -73,8 +73,14 @@ final class AppEnvironment {
     GrowingMarimoViewModel(coordinator: coordinator)
   }
 
-  /// Builds the shelf view model bound to the shared frozen-marimo store.
+  /// Builds the shelf view model bound to the shared frozen-marimo store and the
+  /// cache it reads each tapped month's heatmap detail from.
   func makeShelfViewModel() -> ShelfViewModel {
-    ShelfViewModel(marimoStore: marimoStore)
+    ShelfViewModel(
+      marimoStore: marimoStore,
+      stepLogStore: stepLogStore,
+      coordinator: coordinator,
+      calendar: calendar
+    )
   }
 }

@@ -10,6 +10,8 @@ import SwiftUI
 struct ShelfView: View {
   @State private var model: ShelfViewModel
   @State private var syncModel: StepSyncModel
+  /// The month whose detail sheet is open, if any.
+  @State private var selection: MonthSelection?
 
   /// Adaptive columns: as many ~96pt thumbnails as fit, so the grid scales from
   /// iPhone to iPad without a fixed column count.
@@ -18,6 +20,13 @@ struct ShelfView: View {
   init(model: ShelfViewModel, syncModel: StepSyncModel) {
     _model = State(initialValue: model)
     _syncModel = State(initialValue: syncModel)
+  }
+
+  /// Wraps the tapped month so `sheet(item:)` can key off it; the marimo carries
+  /// its own month identity.
+  private struct MonthSelection: Identifiable {
+    let marimo: FrozenMarimo
+    var id: String { marimo.yearMonth.storageKey }
   }
 
   var body: some View {
@@ -29,6 +38,13 @@ struct ShelfView: View {
     // and same-phase differential completions, so a newly frozen month appears
     // without the shelf running its own sync.
     .task(id: syncModel.observationKey) { await model.observe(syncModel.phase) }
+    .sheet(item: $selection) { selection in
+      // The detail is built on selection for the one tapped month; the marimo draws
+      // regardless, so a failed heatmap build still shows the monument.
+      MonthDetailSheet(
+        marimo: selection.marimo,
+        detail: model.monthDetail(for: selection.marimo.yearMonth))
+    }
   }
 
   @ViewBuilder
@@ -50,7 +66,12 @@ struct ShelfView: View {
       // scroll however far back without rendering off-screen months.
       LazyVGrid(columns: columns, spacing: 20) {
         ForEach(marimos, id: \.yearMonth.storageKey) { marimo in
-          ShelfMarimoThumbnail(marimo: marimo)
+          Button {
+            selection = MonthSelection(marimo: marimo)
+          } label: {
+            ShelfMarimoThumbnail(marimo: marimo)
+          }
+          .buttonStyle(.plain)
         }
       }
       .padding()

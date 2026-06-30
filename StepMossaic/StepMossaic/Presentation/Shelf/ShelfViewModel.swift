@@ -27,9 +27,23 @@ final class ShelfViewModel {
   private(set) var phase: Phase = .loading
 
   private let marimoStore: any MarimoStore
+  private let stepLogStore: any StepLogStore
+  private let coordinator: StepSyncCoordinator
+  private let calendar: Calendar
+  private let levelScale: StepLevelScale
 
-  init(marimoStore: any MarimoStore) {
+  init(
+    marimoStore: any MarimoStore,
+    stepLogStore: any StepLogStore,
+    coordinator: StepSyncCoordinator,
+    calendar: Calendar,
+    levelScale: StepLevelScale = StepLevelScale()
+  ) {
     self.marimoStore = marimoStore
+    self.stepLogStore = stepLogStore
+    self.coordinator = coordinator
+    self.calendar = calendar
+    self.levelScale = levelScale
   }
 
   /// The frozen marimos when ready, for the view and tests to read directly.
@@ -68,4 +82,48 @@ final class ShelfViewModel {
       phase = .empty
     }
   }
+
+  /// Builds the heatmap detail for a tapped month, drawn alongside its frozen
+  /// marimo in the detail sheet.
+  ///
+  /// Computed on demand for the one selected month (cheap, one month of logs) from
+  /// the same cache and coverage the Home heatmap reads, so the day shading,
+  /// total, and average match. Returns `nil` on a read failure, so the sheet falls
+  /// back to showing the marimo alone rather than surfacing an error.
+  func monthDetail(for yearMonth: YearMonth) -> MonthDetail? {
+    do {
+      let coverage = try coordinator.coverage()
+      let interval = yearMonth.interval(calendar: calendar)
+      let logs = try stepLogStore.logs(in: interval)
+      let stepsByDay = Dictionary(uniqueKeysWithValues: logs.map { ($0.day, $0.steps) })
+      let heatmap = StepHeatmapGenerator.heatmap(
+        for: interval,
+        stepsByDay: stepsByDay,
+        coverage: coverage,
+        calendar: calendar,
+        levelScale: levelScale
+      )
+      return MonthDetail(
+        weeks: HeatmapLayout.weeks(for: heatmap.cells, calendar: calendar),
+        orderedWeekdaySymbols: calendar.orderedVeryShortWeekdaySymbols,
+        positiveLevelCount: levelScale.positiveLevelCount,
+        referenceColumnCount: HeatmapLayout.weekCount(for: interval, calendar: calendar),
+        totalSteps: heatmap.totalSteps,
+        averageStepsPerAvailableDay: heatmap.averageStepsPerAvailableDay
+      )
+    } catch {
+      return nil
+    }
+  }
+}
+
+/// The heatmap figures and layout for a single month, ready for the detail sheet
+/// to render through `HeatmapGrid` without recomputing aggregation or layout.
+struct MonthDetail {
+  let weeks: [HeatmapWeek]
+  let orderedWeekdaySymbols: [String]
+  let positiveLevelCount: Int
+  let referenceColumnCount: Int
+  let totalSteps: Int
+  let averageStepsPerAvailableDay: Double
 }

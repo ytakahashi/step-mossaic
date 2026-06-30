@@ -120,11 +120,7 @@ final class HeatmapViewModel {
 
   /// Single-letter weekday labels ordered from the calendar's `firstWeekday`, so
   /// the grid's row axis matches the column layout.
-  var orderedWeekdaySymbols: [String] {
-    let symbols = calendar.veryShortWeekdaySymbols
-    let offset = calendar.firstWeekday - 1
-    return Array(symbols[offset...] + symbols[..<offset])
-  }
+  var orderedWeekdaySymbols: [String] { calendar.orderedVeryShortWeekdaySymbols }
 
   /// Mirrors the shared sync lifecycle into this section's own phase.
   ///

@@ -14,10 +14,11 @@ private func makeModel(
   source: FakeStepSource,
   today: Date
 ) throws -> (sync: StepSyncModel, heatmap: HeatmapViewModel) {
-  let store = SwiftDataStepLogStore(
-    context: try InMemoryStore.makeContext(), calendar: testCalendar, now: { today })
+  let context = try InMemoryStore.makeContext()
+  let store = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
   let coordinator = StepSyncCoordinator(
-    source: source, stepLogStore: store, calendar: testCalendar, now: { today })
+    source: source, stepLogStore: store, marimoStore: SwiftDataMarimoStore(context: context),
+    calendar: testCalendar, now: { today })
   let sync = StepSyncModel(coordinator: coordinator)
   let heatmap = HeatmapViewModel(
     coordinator: coordinator, stepLogStore: store, calendar: testCalendar, today: { today })

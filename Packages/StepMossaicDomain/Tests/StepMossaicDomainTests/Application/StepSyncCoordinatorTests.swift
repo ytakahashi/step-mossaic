@@ -32,14 +32,18 @@ private func makeCoordinator(
   source: FakeStepSource,
   store: FakeStepLogStore,
   today: Date,
-  chunkSizeInDays: Int = 365
+  chunkSizeInDays: Int = 365,
+  marimoStore: FakeMarimoStore = FakeMarimoStore(),
+  freezePolicy: MarimoFreezePolicy = MarimoFreezePolicy(gracePeriodDays: 5)
 ) -> StepSyncCoordinator {
   StepSyncCoordinator(
     source: source,
     stepLogStore: store,
+    marimoStore: marimoStore,
     calendar: calendar,
     now: { today },
-    chunkSizeInDays: chunkSizeInDays
+    chunkSizeInDays: chunkSizeInDays,
+    freezePolicy: freezePolicy
   )
 }
 
@@ -174,7 +178,8 @@ func backfillPinsClockAcrossMidnight() async throws {
   let source = FakeStepSource(earliest: makeDate(2026, 1, 1))
   let store = FakeStepLogStore()
   let coordinator = StepSyncCoordinator(
-    source: source, stepLogStore: store, calendar: calendar, now: clock.now)
+    source: source, stepLogStore: store, marimoStore: FakeMarimoStore(), calendar: calendar,
+    now: clock.now)
 
   // Act
   try await coordinator.sync()
@@ -194,7 +199,8 @@ func differentialSyncPinsClockAcrossMidnight() async throws {
   let source = FakeStepSource(earliest: makeDate(2026, 1, 1))
   let store = FakeStepLogStore(anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 2, 1)))
   let coordinator = StepSyncCoordinator(
-    source: source, stepLogStore: store, calendar: calendar, now: clock.now)
+    source: source, stepLogStore: store, marimoStore: FakeMarimoStore(), calendar: calendar,
+    now: clock.now)
 
   // Act
   try await coordinator.sync()
@@ -282,7 +288,8 @@ func growingMarimoPinsClockAcrossMonthBoundary() throws {
     anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 7, 1))
   )
   let coordinator = StepSyncCoordinator(
-    source: FakeStepSource(), stepLogStore: store, calendar: calendar, now: clock.now)
+    source: FakeStepSource(), stepLogStore: store, marimoStore: FakeMarimoStore(),
+    calendar: calendar, now: clock.now)
 
   // Act
   let parameters = try #require(try coordinator.growingMarimo())
@@ -290,4 +297,110 @@ func growingMarimoPinsClockAcrossMonthBoundary() throws {
   // Assert: the June render uses June 30 as today, not the next clock tick.
   #expect(clock.reads == 1)
   #expect(parameters.totalSteps == 15_999)
+}
+
+// MARK: - Frozen marimos
+
+@MainActor
+@Test("Reconciling freezes every completed past month but never the current month")
+func refreshFreezesPastMonthsNotCurrent() throws {
+  // Arrange: April .. June measured, synced through today (June 15).
+  let store = FakeStepLogStore(
+    seedLogs: [
+      DailySteps(day: makeDay(2026, 4, 5), steps: 5_000),
+      DailySteps(day: makeDay(2026, 5, 10), steps: 6_000),
+      DailySteps(day: makeDay(2026, 6, 3), steps: 7_000),
+    ],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 15))
+  )
+  let marimoStore = FakeMarimoStore()
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 6, 15), marimoStore: marimoStore)
+
+  // Act
+  try coordinator.refreshFrozenMarimos()
+
+  // Assert: April and May are frozen; June is the growing month and not persisted.
+  #expect(
+    try marimoStore.allFrozen().map(\.yearMonth) == [
+      YearMonth(year: 2026, month: 4),
+      YearMonth(year: 2026, month: 5),
+    ])
+  // April's total is its one logged day; the other available April days are 0.
+  #expect(try marimoStore.frozenMarimo(for: YearMonth(year: 2026, month: 4))?.totalSteps == 5_000)
+  #expect(try marimoStore.frozenMarimo(for: YearMonth(year: 2026, month: 6)) == nil)
+}
+
+@MainActor
+@Test("A grace-period month is frozen unlocked and regenerated on the next run")
+func refreshRegeneratesGraceMonth() throws {
+  // Arrange: only May is complete, and today (June 3) is within May's 5-day grace.
+  let store = FakeStepLogStore(
+    seedLogs: [DailySteps(day: makeDay(2026, 5, 10), steps: 6_000)],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 3))
+  )
+  let marimoStore = FakeMarimoStore()
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 6, 3), marimoStore: marimoStore)
+
+  // Act: first reconcile freezes May unlocked.
+  try coordinator.refreshFrozenMarimos()
+  let afterFirst = try #require(try marimoStore.frozenMarimo(for: YearMonth(year: 2026, month: 5)))
+
+  // A late sample lands in May, then a second reconcile runs while still in grace.
+  try store.upsert([DailySteps(day: makeDay(2026, 5, 20), steps: 3_000)])
+  try coordinator.refreshFrozenMarimos()
+  let afterSecond = try #require(try marimoStore.frozenMarimo(for: YearMonth(year: 2026, month: 5)))
+
+  // Assert: a grace month stays unlocked and absorbs the late sample (6k -> 9k).
+  #expect(afterFirst.isLocked == false)
+  #expect(afterFirst.totalSteps == 6_000)
+  #expect(afterSecond.isLocked == false)
+  #expect(afterSecond.totalSteps == 9_000)
+}
+
+@MainActor
+@Test("A locked month is left untouched even when its underlying logs change")
+func refreshSkipsLockedMonth() throws {
+  // Arrange: April is already locked in the store from an earlier snapshot, while
+  // the cached April logs now say something different.
+  let store = FakeStepLogStore(
+    seedLogs: [DailySteps(day: makeDay(2026, 4, 5), steps: 9_999)],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 5, 20))
+  )
+  let lockedApril = FrozenMarimo(
+    yearMonth: YearMonth(year: 2026, month: 4),
+    sizeUnit: 0.5, colorLevel: 2, bumpiness: 0.3, seed: 1,
+    totalSteps: 1_111, frozenAt: makeDate(2026, 5, 1), isLocked: true
+  )
+  let marimoStore = FakeMarimoStore(seed: [lockedApril])
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 5, 20), marimoStore: marimoStore)
+
+  // Act
+  try coordinator.refreshFrozenMarimos()
+
+  // Assert: the locked monument keeps its baked total and is never re-saved.
+  #expect(try marimoStore.frozenMarimo(for: YearMonth(year: 2026, month: 4))?.totalSteps == 1_111)
+  #expect(marimoStore.saveCallCount == 0)
+}
+
+@MainActor
+@Test("A past month entirely outside coverage is skipped, not frozen empty")
+func refreshSkipsMonthWithoutAvailableDays() throws {
+  // Arrange: data exists only for January (synced through Jan 31), but today is in
+  // April, so February and March are past months with no available day.
+  let store = FakeStepLogStore(
+    seedLogs: [DailySteps(day: makeDay(2026, 1, 5), steps: 5_000)],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 1, 31))
+  )
+  let marimoStore = FakeMarimoStore()
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 4, 15), marimoStore: marimoStore)
+
+  // Act
+  try coordinator.refreshFrozenMarimos()
+
+  // Assert: only January, which has covered days, is frozen.
+  #expect(try marimoStore.allFrozen().map(\.yearMonth) == [YearMonth(year: 2026, month: 1)])
 }

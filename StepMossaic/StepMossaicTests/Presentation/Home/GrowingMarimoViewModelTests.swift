@@ -12,10 +12,11 @@ private func makeModel(
   source: FakeStepSource,
   today: Date
 ) throws -> (sync: StepSyncModel, marimo: GrowingMarimoViewModel) {
-  let store = SwiftDataStepLogStore(
-    context: try InMemoryStore.makeContext(), calendar: testCalendar, now: { today })
+  let context = try InMemoryStore.makeContext()
+  let store = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
   let coordinator = StepSyncCoordinator(
-    source: source, stepLogStore: store, calendar: testCalendar, now: { today })
+    source: source, stepLogStore: store, marimoStore: SwiftDataMarimoStore(context: context),
+    calendar: testCalendar, now: { today })
   let sync = StepSyncModel(coordinator: coordinator)
   let marimo = GrowingMarimoViewModel(coordinator: coordinator)
   return (sync, marimo)
@@ -68,11 +69,13 @@ func marimoEmptyWithoutData() async throws {
 @Test("Reflects backfill progress straight from the shared sync phase")
 func marimoReflectsBackfillingPhase() async {
   // Arrange: a coordinator isn't needed — observe maps the shared phase directly.
-  let store = try! SwiftDataStepLogStore(
-    context: InMemoryStore.makeContext(), calendar: testCalendar, now: { makeDate(2026, 6, 28) })
+  let context = try! InMemoryStore.makeContext()
+  let store = SwiftDataStepLogStore(
+    context: context, calendar: testCalendar, now: { makeDate(2026, 6, 28) })
   let coordinator = StepSyncCoordinator(
-    source: FakeStepSource(), stepLogStore: store, calendar: testCalendar,
-    now: { makeDate(2026, 6, 28) })
+    source: FakeStepSource(), stepLogStore: store,
+    marimoStore: SwiftDataMarimoStore(context: context),
+    calendar: testCalendar, now: { makeDate(2026, 6, 28) })
   let marimo = GrowingMarimoViewModel(coordinator: coordinator)
 
   // Act

@@ -11,10 +11,12 @@ private func makeModel(
   source: any StepSource,
   today: Date
 ) throws -> StepSyncModel {
-  let store = SwiftDataStepLogStore(
-    context: try InMemoryStore.makeContext(), calendar: testCalendar, now: { today })
+  let context = try InMemoryStore.makeContext()
+  let store = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
+  let marimoStore = SwiftDataMarimoStore(context: context)
   let coordinator = StepSyncCoordinator(
-    source: source, stepLogStore: store, calendar: testCalendar, now: { today })
+    source: source, stepLogStore: store, marimoStore: marimoStore, calendar: testCalendar,
+    now: { today })
   return StepSyncModel(coordinator: coordinator)
 }
 
@@ -85,6 +87,45 @@ func syncSettlesReadyWithData() async throws {
 
   // Assert
   #expect(model.phase == .ready)
+}
+
+@MainActor
+@Test("A settled sync freezes completed past months into the marimo store")
+func syncFreezesPastMonths() async throws {
+  // Arrange: April..June history, so April and May are completed past months while
+  // June is still the growing (current) month. Share one context so the frozen
+  // store reads the same cache the sync just filled.
+  let context = try InMemoryStore.makeContext()
+  let today = makeDate(2026, 6, 15)
+  let stepLogStore = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
+  let marimoStore = SwiftDataMarimoStore(context: context)
+  let coordinator = StepSyncCoordinator(
+    source: FakeStepSource(
+      status: .requested,
+      stepsToReturn: [
+        DailySteps(day: makeDay(2026, 4, 5), steps: 5_000),
+        DailySteps(day: makeDay(2026, 5, 10), steps: 6_000),
+        DailySteps(day: makeDay(2026, 6, 3), steps: 7_000),
+      ],
+      earliest: makeDate(2026, 4, 1)
+    ),
+    stepLogStore: stepLogStore,
+    marimoStore: marimoStore,
+    calendar: testCalendar,
+    now: { today }
+  )
+  let model = StepSyncModel(coordinator: coordinator)
+
+  // Act
+  await model.start()
+
+  // Assert: the settled sync reconciled the shelf's past months, excluding June.
+  #expect(model.phase == .ready)
+  #expect(
+    try marimoStore.allFrozen().map(\.yearMonth) == [
+      YearMonth(year: 2026, month: 4),
+      YearMonth(year: 2026, month: 5),
+    ])
 }
 
 @MainActor

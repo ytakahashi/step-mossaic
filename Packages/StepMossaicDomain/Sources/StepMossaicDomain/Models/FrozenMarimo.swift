@@ -31,6 +31,45 @@ public struct FrozenMarimo: Equatable, Sendable {
   }
 }
 
+extension FrozenMarimo {
+  /// Builds a frozen snapshot from freshly generated parameters.
+  ///
+  /// The bridge from generation to persistence: `MarimoGenerator` produces the
+  /// `MarimoParameters`, and the freeze policy supplies `frozenAt`/`isLocked`. The
+  /// generated values are already clamped, so the base initializer's clamping is a
+  /// harmless re-assertion.
+  public init(
+    yearMonth: YearMonth,
+    parameters: MarimoParameters,
+    frozenAt: Date,
+    isLocked: Bool
+  ) {
+    self.init(
+      yearMonth: yearMonth,
+      sizeUnit: parameters.sizeUnit,
+      colorLevel: parameters.colorLevel,
+      bumpiness: parameters.bumpiness,
+      seed: parameters.seed,
+      totalSteps: parameters.totalSteps,
+      frozenAt: frozenAt,
+      isLocked: isLocked
+    )
+  }
+
+  /// The rendering parameters baked into this snapshot, for drawing the marimo on
+  /// the shelf and in the month detail. Drops the persistence-only `frozenAt`,
+  /// `isLocked`, and month key the renderer does not need.
+  public var parameters: MarimoParameters {
+    MarimoParameters(
+      sizeUnit: sizeUnit,
+      colorLevel: colorLevel,
+      bumpiness: bumpiness,
+      seed: seed,
+      totalSteps: totalSteps
+    )
+  }
+}
+
 extension Double {
   package func clamped(to range: ClosedRange<Double>) -> Double {
     min(max(self, range.lowerBound), range.upperBound)

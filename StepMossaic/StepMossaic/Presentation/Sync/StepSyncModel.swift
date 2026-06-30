@@ -106,6 +106,12 @@ final class StepSyncModel {
       // Swallow: read-only HealthKit access can't be confirmed, so render whatever
       // coverage reports from the cache rather than surfacing an error.
     }
+    // Reconcile the frozen monthly marimos from the freshly-synced cache so the
+    // shelf reflects newly completed and grace-period months. Done before the
+    // count bumps, so observers see the updated store on the same observation key.
+    // Swallowed like the sync: a read-only failure should not block rendering what
+    // coverage already has.
+    try? coordinator.refreshFrozenMarimos()
     resolveSettledPhase()
     completedSyncCount += 1
   }

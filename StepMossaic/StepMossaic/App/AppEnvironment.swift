@@ -18,6 +18,7 @@ import SwiftData
 final class AppEnvironment {
   private let source: any StepSource
   private let stepLogStore: any StepLogStore
+  private let marimoStore: any MarimoStore
   private let coordinator: StepSyncCoordinator
   private let calendar: Calendar
 
@@ -29,6 +30,7 @@ final class AppEnvironment {
     let context = ModelContext(modelContainer)
     let source = HealthKitStepSource(calendar: calendar)
     let stepLogStore = SwiftDataStepLogStore(context: context, calendar: calendar)
+    let marimoStore = SwiftDataMarimoStore(context: context)
     // Marimo tuning is assembled here, in the composition root, rather than left as
     // a generator default — this is the seam a future Settings screen feeds a
     // persisted `sizeReferenceMonthlySteps` (the monthly-steps reference) into.
@@ -36,13 +38,16 @@ final class AppEnvironment {
     let coordinator = StepSyncCoordinator(
       source: source,
       stepLogStore: stepLogStore,
+      marimoStore: marimoStore,
       calendar: calendar,
       now: { Date() },
-      marimoConfig: marimoConfig
+      marimoConfig: marimoConfig,
+      freezePolicy: MarimoFreezePolicy(gracePeriodDays: 5)
     )
 
     self.source = source
     self.stepLogStore = stepLogStore
+    self.marimoStore = marimoStore
     self.coordinator = coordinator
     self.calendar = calendar
     self.syncModel = StepSyncModel(coordinator: coordinator)

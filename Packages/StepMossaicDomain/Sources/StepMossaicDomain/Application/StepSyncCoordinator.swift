@@ -14,6 +14,9 @@ import Foundation
 public final class StepSyncCoordinator {
   private let source: any StepSource
   private let stepLogStore: any StepLogStore
+  /// Persists the frozen monthly marimos the shelf renders. Non-`Sendable` and
+  /// driven only from this main-actor coordinator, like `stepLogStore`.
+  private let marimoStore: any MarimoStore
   private let calendar: Calendar
   /// Injected clock so "today" stays deterministic in tests instead of reading
   /// the wall clock.
@@ -24,22 +27,29 @@ public final class StepSyncCoordinator {
   /// Tunables for marimo generation, injected like the calendar so the same
   /// instance drives both the heatmap's coverage and the growing marimo.
   private let marimoConfig: MarimoGenerationConfig
+  /// Decides when a past month's marimo locks, injected so the grace window is a
+  /// composition-root tuning value rather than a constant buried here.
+  private let freezePolicy: MarimoFreezePolicy
 
   public init(
     source: any StepSource,
     stepLogStore: any StepLogStore,
+    marimoStore: any MarimoStore,
     calendar: Calendar,
     now: @escaping @MainActor () -> Date,
     chunkSizeInDays: Int = 365,
-    marimoConfig: MarimoGenerationConfig = MarimoGenerationConfig()
+    marimoConfig: MarimoGenerationConfig = MarimoGenerationConfig(),
+    freezePolicy: MarimoFreezePolicy = MarimoFreezePolicy(gracePeriodDays: 5)
   ) {
     precondition(chunkSizeInDays >= 1, "StepSyncCoordinator chunkSizeInDays must be >= 1")
     self.source = source
     self.stepLogStore = stepLogStore
+    self.marimoStore = marimoStore
     self.calendar = calendar
     self.now = now
     self.chunkSizeInDays = chunkSizeInDays
     self.marimoConfig = marimoConfig
+    self.freezePolicy = freezePolicy
   }
 
   private var today: Day { Day(containing: now(), calendar: calendar) }
@@ -134,6 +144,62 @@ public final class StepSyncCoordinator {
       calendar: calendar,
       config: marimoConfig
     )
+  }
+
+  /// Reconciles the persisted frozen marimos for every completed past month, from
+  /// the first available month through last month. Idempotent, so it is safe to
+  /// run after each sync:
+  ///
+  /// - A locked month is an immutable monument: it is skipped without re-reading
+  ///   its logs, so a late HealthKit edit cannot alter it. Refreshing a locked
+  ///   month is only possible through a full cache rebuild.
+  /// - A grace-period month is regenerated every run, so late-arriving samples and
+  ///   past corrections are absorbed until the grace window closes and it locks.
+  /// - A month with no available day (e.g. entirely outside coverage) is skipped.
+  ///
+  /// The current month is never persisted here — it is the growing marimo, drawn
+  /// on demand. Month rollover needs no separate detection: once a month ends it
+  /// simply enters this past-month range on the next run.
+  public func refreshFrozenMarimos() throws {
+    // Pin the instant so the month boundary and lock decisions share one "now".
+    let renderDate = now()
+    let today = Day(containing: renderDate, calendar: calendar)
+    let coverage = try coverage()
+    guard let firstAvailableDay = coverage.firstAvailableDay else { return }
+
+    let firstMonth = YearMonth(date: firstAvailableDay.start, calendar: calendar)
+    let currentMonth = YearMonth(date: renderDate, calendar: calendar)
+    // Nothing to freeze until at least one month has fully completed.
+    guard firstMonth < currentMonth else { return }
+
+    // Read existing snapshots once so a locked month is recognized and skipped
+    // without a per-month store round trip.
+    let lockedMonths = Set(try marimoStore.allFrozen().lazy.filter(\.isLocked).map(\.yearMonth))
+
+    var month = firstMonth
+    while month < currentMonth {
+      defer { month = month.next() }
+      guard !lockedMonths.contains(month) else { continue }
+
+      let logs = try stepLogStore.logs(in: month.interval(calendar: calendar))
+      guard
+        let parameters = MarimoGenerator.parameters(
+          for: month,
+          daily: logs,
+          coverage: coverage,
+          today: today,
+          calendar: calendar,
+          config: marimoConfig
+        )
+      else { continue }
+
+      // A past month is only ever `.grace` or `.locked`; `.growing` is reserved
+      // for the current/future month, which this loop never reaches.
+      let isLocked = freezePolicy.lockState(for: month, now: today, calendar: calendar) == .locked
+      try marimoStore.save(
+        FrozenMarimo(
+          yearMonth: month, parameters: parameters, frozenAt: renderDate, isLocked: isLocked))
+    }
   }
 
   private func backfill(

@@ -83,4 +83,10 @@ final class AppEnvironment {
       calendar: calendar
     )
   }
+
+  /// Builds the Settings view model bound to the shared step source (for Health
+  /// status/connection) and the shared sync model (for triggering a rebuild).
+  func makeSettingsViewModel() -> SettingsViewModel {
+    SettingsViewModel(source: source, syncModel: syncModel)
+  }
 }

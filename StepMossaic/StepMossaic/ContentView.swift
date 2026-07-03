@@ -20,7 +20,7 @@ struct ContentView: View {
           Label("Shelf", systemImage: "square.grid.3x3")
         }
 
-      SettingsView()
+      SettingsView(model: environment.makeSettingsViewModel(), syncModel: environment.syncModel)
         .tabItem {
           Label("Settings", systemImage: "gearshape")
         }

@@ -58,10 +58,14 @@ public final class StepSyncCoordinator {
   /// cache fresh mid-session without itself depending on the `StepSource`.
   ///
   /// Each emission means today's samples may have changed, so the consumer should
-  /// run a differential `sync()`. Bursts are coalesced to the newest pending tick:
-  /// the cache is re-read from the source, so intermediate tick identities carry
-  /// no information and do not need one sync each. The underlying query is
-  /// foreground-only and stops when the returned stream is cancelled.
+  /// run a differential `sync()`; intermediate tick identities carry no
+  /// information, so the cache is simply re-read from the source on each one.
+  /// The `.bufferingNewest(1)` policy drops redundant ticks while the consumer is
+  /// busy. A consumer that needs "one follow-up per burst" semantics should not
+  /// read this stream ahead of its own sync work; `StepSyncModel` does that and
+  /// also folds ticks that arrive while another sync request is already running.
+  /// The underlying query is foreground-only and stops when the returned stream
+  /// is cancelled.
   public func observeStepUpdates() -> AsyncStream<Void> {
     AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
       let task = Task { [source] in

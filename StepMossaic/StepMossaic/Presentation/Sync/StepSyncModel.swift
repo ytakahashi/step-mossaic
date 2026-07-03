@@ -45,18 +45,22 @@ final class StepSyncModel {
   }
 
   private let coordinator: StepSyncCoordinator
-  /// Guards against a second concurrent run (e.g. a re-appear while a backfill is
-  /// still in flight) launching a duplicate turn against the same store.
-  private var isSyncing = false
   /// What the currently in-flight run should do on its next turn once it loops,
   /// so a call arriving mid-run is never lost. `.rebuild` always wins over a
-  /// pending `.sync` and is never downgraded back — see `request(_:)`.
+  /// pending `.sync`/`.liveSync` and is never downgraded back — see
+  /// `request(_:)`.
   private enum PendingRun: Equatable {
     case none
     case sync
+    case liveSync
     case rebuild
   }
   private var pending: PendingRun = .none
+  /// The single serialized run loop currently draining queued sync work.
+  ///
+  /// Set before the task is launched, so additional requests arriving before the
+  /// task body starts still fold into `pending` instead of launching a duplicate.
+  private var runTask: Task<Void, Never>?
 
   init(coordinator: StepSyncCoordinator) {
     self.coordinator = coordinator
@@ -93,43 +97,81 @@ final class StepSyncModel {
   /// Runs `kind` now if nothing is in flight, otherwise folds it into the
   /// in-flight run's next turn.
   private func request(_ kind: PendingRun) async {
-    guard !isSyncing else {
-      // A pending rebuild is never downgraded back to a plain sync, since the
-      // rebuild's redrive already covers whatever the plain sync would have done.
-      if kind == .rebuild || pending == .none {
-        pending = kind
-      }
-      return
+    let request = enqueue(kind)
+    if request.startedNewRun {
+      await request.task.value
     }
-    isSyncing = true
-    defer { isSyncing = false }
+  }
 
-    var rebuildThisTurn = (kind == .rebuild)
+  /// Queues a run request synchronously and returns the task draining the queue.
+  ///
+  /// This is the critical coalescing boundary for live ticks: observing code
+  /// queues the request before it awaits any work, so an already-running sync
+  /// sees the tick immediately as `pending` instead of depending on when child
+  /// tasks happen to start running.
+  @discardableResult
+  private func enqueue(_ kind: PendingRun) -> (task: Task<Void, Never>, startedNewRun: Bool) {
+    if let task = runTask {
+      // A pending rebuild is never downgraded back to a plain sync/live tick,
+      // since the rebuild's redrive already covers whatever they would have done.
+      switch (pending, kind) {
+      case (_, .rebuild):
+        pending = kind
+      case (.none, _):
+        pending = kind
+      default:
+        break
+      }
+      return (task, false)
+    }
+
+    let task = Task { [weak self] in
+      guard let self else { return }
+      await self.drainRequests(startingWith: kind)
+    }
+    runTask = task
+    return (task, true)
+  }
+
+  /// Drains the current request and every folded follow-up in one serialized loop.
+  private func drainRequests(startingWith kind: PendingRun) async {
+    defer {
+      runTask = nil
+    }
+
+    var current = kind
     repeat {
       pending = .none
-      if rebuildThisTurn {
+      if current == .rebuild {
         // Drops before the reset so no observer sees stale `.ready` content in
         // the gap before the reset resolves.
         phase = .loading
         try? coordinator.rebuildCache()
       }
       await runOnce()
-      rebuildThisTurn = (pending == .rebuild)
+      current = pending
     } while pending != .none
   }
 
-  /// Keeps the cache fresh during a foreground session: each live tick runs a
-  /// differential `start()`, which (once settled) bumps `completedSyncCount`
+  /// Keeps the cache fresh during a foreground session: each live tick requests a
+  /// differential sync turn, which (once settled) bumps `completedSyncCount`
   /// without changing the visible phase, so the cache-backed sections re-render
   /// through their existing `observe` path. Empty caches with no anchor yet can
   /// even promote to `.ready` once the first samples appear.
   ///
+  /// Live ticks use their own request kind so their overlap/coalescing rules
+  /// live beside normal `start()` and destructive `rebuild()` requests. The loop
+  /// waits for the drain task after each relayed tick, leaving rapid subsequent
+  /// ticks in the coordinator's newest-only buffer while sync work is in flight.
+  /// If a tick is consumed while another request is already running, it folds
+  /// into the same pending slot as any other overlap. Rebuild still wins if it is
+  /// requested while live work is in flight.
+  ///
   /// Driven by `.task` so the underlying observer query is torn down on disappear.
-  /// The coordinator coalesces rapid ticks to the newest pending signal, and
-  /// `start()` still folds overlaps with appearance/auth syncs into one follow-up.
   func observeLiveUpdates() async {
     for await _ in coordinator.observeStepUpdates() {
-      await start()
+      let request = enqueue(.liveSync)
+      await request.task.value
     }
   }
 

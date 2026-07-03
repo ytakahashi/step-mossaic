@@ -131,6 +131,97 @@ private final class PausingDailyStepsSource: StepSource, @unchecked Sendable {
   }
 }
 
+/// Step source whose live-tick stream is driven by hand (`emitTick()` /
+/// `finishTicks()`) rather than firing a fixed burst at stream-creation time,
+/// combined with a `dailySteps(in:)` that pauses on its first call. A source
+/// that just yields N ticks upfront makes coalescing a real Task-scheduling
+/// race (how many land before the coordinator's forwarding task reacts is
+/// scheduler luck); driving ticks by hand instead lets a test pin the exact
+/// moment further ticks arrive relative to an in-flight sync.
+private final class ControlledTickSource: StepSource, @unchecked Sendable {
+  var status: HealthAuthorizationStatus = .requested
+  private let stepsToReturn: [DailySteps]
+  private(set) var dailyStepsRequestCount = 0
+
+  private var tickContinuation: AsyncStream<Void>.Continuation?
+  private var didPauseOnce = false
+  private var pausedContinuation: CheckedContinuation<Void, Never>?
+  private var waitContinuation: CheckedContinuation<Void, Never>?
+  /// Resumed once `observeTodayUpdates()` has actually been called, so a test
+  /// can wait for the stream to exist before calling `emitTick()`. Needed
+  /// because `Task { await model.observeLiveUpdates() }` only *schedules* that
+  /// work — the very next line of the test runs before the task body has
+  /// reached `observeTodayUpdates()`, so `emitTick()` called too early would
+  /// silently no-op against a still-nil `tickContinuation`.
+  private var observingContinuation: CheckedContinuation<Void, Never>?
+
+  init(stepsToReturn: [DailySteps]) {
+    self.stepsToReturn = stepsToReturn
+  }
+
+  func authorizationStatus() -> HealthAuthorizationStatus { status }
+
+  func requestAuthorization() async throws {}
+
+  /// Never expected to be called: every test using this fixture pre-seeds an
+  /// anchor so `sync()` always takes the differential path.
+  func earliestSampleDate() async throws -> Date? { nil }
+
+  func dailySteps(in interval: DayInterval) async throws -> [DailySteps] {
+    dailyStepsRequestCount += 1
+    if !didPauseOnce {
+      didPauseOnce = true
+      waitContinuation?.resume()
+      waitContinuation = nil
+      await withCheckedContinuation { continuation in
+        pausedContinuation = continuation
+      }
+    }
+    return stepsToReturn
+  }
+
+  func observeTodayUpdates() -> AsyncStream<Void> {
+    AsyncStream { continuation in
+      tickContinuation = continuation
+      observingContinuation?.resume()
+      observingContinuation = nil
+    }
+  }
+
+  /// Waits until `observeTodayUpdates()` has been called, so `emitTick()`
+  /// can't be called before the stream exists to receive it.
+  func waitUntilObserving() async {
+    guard tickContinuation == nil else { return }
+    await withCheckedContinuation { continuation in
+      observingContinuation = continuation
+    }
+  }
+
+  /// Emits one live tick. Synchronous and never suspends, so a test can create a
+  /// burst while the first sync is still paused; the production coalescing
+  /// guarantee comes from `StepSyncModel` not reading ahead while that sync runs.
+  func emitTick() {
+    tickContinuation?.yield(())
+  }
+
+  func finishTicks() {
+    tickContinuation?.finish()
+  }
+
+  func waitForFirstDailyStepsRequest() async {
+    guard pausedContinuation == nil else { return }
+    await withCheckedContinuation { continuation in
+      waitContinuation = continuation
+    }
+  }
+
+  func releaseFirstDailyStepsRequest() {
+    let continuation = pausedContinuation
+    pausedContinuation = nil
+    continuation?.resume()
+  }
+}
+
 @MainActor
 @Test("Settles on ready once a backfill has cached at least one day")
 func syncSettlesReadyWithData() async throws {
@@ -267,26 +358,76 @@ func liveTickPromotesEmptyToReady() async throws {
 }
 
 @MainActor
-@Test("Rapid live ticks are coalesced into one pending follow-up sync")
+@Test("A burst of live ticks arriving mid-sync coalesces into one follow-up, not one per tick")
 func rapidLiveTicksCoalesce() async throws {
-  // Arrange: settle on ready, then emit a burst before the observer can need each
-  // individual tick. The cache is re-read, so only one pending signal matters.
-  let source = FakeStepSource(
-    status: .requested,
-    stepsToReturn: [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)],
-    earliest: makeDate(2026, 6, 1),
-    liveTickCount: 3
+  // Arrange: pre-seed an anchor (as if already synced through June 20) so the
+  // tick-driven syncs below take the differential path directly. No initial
+  // `model.start()` is made — that would consume the source's one-time
+  // `dailySteps` pause on an unrelated backfill instead of the tick we want
+  // paused.
+  let context = try InMemoryStore.makeContext()
+  let today = makeDate(2026, 6, 28)
+  let stepLogStore = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
+  let marimoStore = SwiftDataMarimoStore(context: context)
+  try stepLogStore.saveAnchor(SyncAnchor(lastSyncedDate: makeDate(2026, 6, 20)))
+
+  let source = ControlledTickSource(
+    stepsToReturn: [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)]
   )
-  let model = try makeModel(source: source, today: makeDate(2026, 6, 28))
-  await model.start()
+  let coordinator = StepSyncCoordinator(
+    source: source, stepLogStore: stepLogStore, marimoStore: marimoStore, calendar: testCalendar,
+    now: { today })
+  let model = StepSyncModel(coordinator: coordinator)
 
-  // Act
-  await model.observeLiveUpdates()
+  // Act: observe live updates in the background, then drive the burst by hand
+  // instead of letting the source fire a fixed number of ticks upfront and
+  // hoping real scheduling coalesces them.
+  let observeTask = Task { await model.observeLiveUpdates() }
 
-  // Assert: the burst can cause the current refresh plus one pending follow-up,
-  // but it does not replay every stale tick as its own sync.
+  // `Task { }` only schedules that work — this line runs before its body has
+  // reached `observeTodayUpdates()`. Without waiting here, `emitTick()` below
+  // would race a still-nil stream and silently drop the tick, hanging the test
+  // forever on the `waitForFirstDailyStepsRequest()` that follows.
+  await source.waitUntilObserving()
+
+  // The first tick kicks off a differential sync, which pauses on its
+  // `dailySteps` read. `waitForFirstDailyStepsRequest()` only returns once that
+  // read has actually started — which, since everything here runs
+  // cooperatively on the main actor, guarantees the coordinator's forwarding
+  // task has already relayed this tick and looped back to await the next one.
+  source.emitTick()
+  await source.waitForFirstDailyStepsRequest()
+
+  // Two more ticks arrive while that sync is still in flight. Since
+  // `observeLiveUpdates()` is awaiting the first drain rather than reading ahead,
+  // the coordinator's newest-only buffer exposes the burst as one relayed signal.
+  source.emitTick()
+  source.emitTick()
+  source.finishTicks()
+
+  // Release the paused read: the first sync completes, then the single
+  // coalesced signal above drives exactly one more (unpaused) sync before the
+  // now-finished tick stream ends the observation loop.
+  //
+  // Unlike `rebuildDuringInFlightDifferentialSyncStillFullBackfills` and
+  // `syncQueuesFollowUpWhenStartOverlaps` below, this test does not pin the
+  // race by holding a continuation open until the overlap is confirmed — the
+  // two `emitTick()` calls above just queue their resumption ahead of this
+  // one in program order and rely on the cooperative scheduler draining
+  // already-ready work in that same order. That has held up over repeated
+  // full-suite runs, but it is a softer guarantee than the other two tests'
+  // pinned overlap. If this test ever turns flaky again, this ordering
+  // assumption — not the `enqueue`/`runTask` fold logic itself — is the first
+  // place to look.
+  source.releaseFirstDailyStepsRequest()
+  await observeTask.value
+
+  // Assert: the burst produced exactly one folded follow-up rather than one
+  // sync per tick — two `dailySteps` reads and two completed sync turns, not
+  // three of each.
   #expect(model.phase == .ready)
-  #expect(model.completedSyncCount == 3)
+  #expect(model.completedSyncCount == 2)
+  #expect(source.dailyStepsRequestCount == 2)
 }
 
 @MainActor
@@ -368,7 +509,7 @@ func rebuildDuringInFlightDifferentialSyncStillFullBackfills() async throws {
   let model = StepSyncModel(coordinator: coordinator)
 
   // Act: start the differential sync and let it reach its `dailySteps` read, then
-  // request a rebuild while that read is paused (`isSyncing` is still true).
+  // request a rebuild while that read is paused and the run is still in flight.
   let syncTask = Task { await model.start() }
   await source.waitForFirstDailyStepsRequest()
 

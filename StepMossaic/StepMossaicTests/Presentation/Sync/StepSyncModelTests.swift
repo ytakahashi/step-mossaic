@@ -71,6 +71,66 @@ private final class PausingStepSource: StepSource, @unchecked Sendable {
   }
 }
 
+/// Step source that pauses its first `dailySteps(in:)` call so a test can force
+/// a rebuild request to land while a sync is already reading from the source.
+/// Unlike `PausingStepSource` (which pauses `earliestSampleDate()`, only ever
+/// called on the full-backfill path), this pauses the call every sync path makes,
+/// so it can catch an in-flight *differential* sync mid-read too. Later calls
+/// return immediately. `dailySteps` filters a fixed full history by the
+/// requested interval, so a differential window and a post-rebuild full backfill
+/// each see the historically-correct slice rather than a single canned answer.
+private final class PausingDailyStepsSource: StepSource, @unchecked Sendable {
+  var status: HealthAuthorizationStatus = .requested
+  private let earliest: Date?
+  private let allDays: [DailySteps]
+  private(set) var dailyStepsRequestCount = 0
+
+  private var didPauseOnce = false
+  private var pausedContinuation: CheckedContinuation<Void, Never>?
+  private var waitContinuation: CheckedContinuation<Void, Never>?
+
+  init(earliest: Date?, allDays: [DailySteps]) {
+    self.earliest = earliest
+    self.allDays = allDays
+  }
+
+  func authorizationStatus() -> HealthAuthorizationStatus { status }
+
+  func requestAuthorization() async throws {}
+
+  func earliestSampleDate() async throws -> Date? { earliest }
+
+  func dailySteps(in interval: DayInterval) async throws -> [DailySteps] {
+    dailyStepsRequestCount += 1
+    if !didPauseOnce {
+      didPauseOnce = true
+      waitContinuation?.resume()
+      waitContinuation = nil
+      await withCheckedContinuation { continuation in
+        pausedContinuation = continuation
+      }
+    }
+    return allDays.filter { interval.contains($0.day) }
+  }
+
+  func observeTodayUpdates() -> AsyncStream<Void> {
+    AsyncStream { $0.finish() }
+  }
+
+  func waitForFirstDailyStepsRequest() async {
+    guard pausedContinuation == nil else { return }
+    await withCheckedContinuation { continuation in
+      waitContinuation = continuation
+    }
+  }
+
+  func releaseFirstDailyStepsRequest() {
+    let continuation = pausedContinuation
+    pausedContinuation = nil
+    continuation?.resume()
+  }
+}
+
 @MainActor
 @Test("Settles on ready once a backfill has cached at least one day")
 func syncSettlesReadyWithData() async throws {
@@ -227,6 +287,109 @@ func rapidLiveTicksCoalesce() async throws {
   // but it does not replay every stale tick as its own sync.
   #expect(model.phase == .ready)
   #expect(model.completedSyncCount == 3)
+}
+
+@MainActor
+@Test("Rebuild clears the cache and redrives a full backfill back to ready")
+func rebuildRedrivesFullBackfill() async throws {
+  // Arrange: settle on ready with a past month frozen, so there's something for
+  // the rebuild to actually wipe.
+  let context = try InMemoryStore.makeContext()
+  let today = makeDate(2026, 6, 28)
+  let stepLogStore = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
+  let marimoStore = SwiftDataMarimoStore(context: context)
+  let source = FakeStepSource(
+    status: .requested,
+    stepsToReturn: [
+      DailySteps(day: makeDay(2026, 5, 10), steps: 6_000),
+      DailySteps(day: makeDay(2026, 6, 27), steps: 8_432),
+    ],
+    earliest: makeDate(2026, 5, 1)
+  )
+  let coordinator = StepSyncCoordinator(
+    source: source, stepLogStore: stepLogStore, marimoStore: marimoStore, calendar: testCalendar,
+    now: { today })
+  let model = StepSyncModel(coordinator: coordinator)
+  await model.start()
+  #expect(model.phase == .ready)
+  #expect(try marimoStore.allFrozen().isEmpty == false)
+
+  // Act
+  await model.rebuild()
+
+  // Assert: the wipe-then-resync round trip lands back on ready with the same
+  // source data and the frozen month reconciled again, not left empty.
+  #expect(model.phase == .ready)
+  #expect(try marimoStore.allFrozen().map(\.yearMonth) == [YearMonth(year: 2026, month: 5)])
+  #expect(
+    try stepLogStore.logs(in: DayInterval(start: makeDay(2026, 5, 1), end: makeDay(2026, 6, 28)))
+      .count == 2)
+}
+
+@MainActor
+@Test("Rebuild on an empty cache settles back on empty rather than ready")
+func rebuildOnEmptyCacheStaysEmpty() async throws {
+  // Arrange: the first sync finds no samples and settles empty.
+  let model = try makeModel(source: FakeStepSource(earliest: nil), today: makeDate(2026, 6, 28))
+  await model.start()
+  #expect(model.phase == .empty)
+
+  // Act
+  await model.rebuild()
+
+  // Assert: rebuilding an already-empty cache is a harmless no-op.
+  #expect(model.phase == .empty)
+}
+
+@MainActor
+@Test("A rebuild requested during an in-flight differential sync still ends up a full backfill")
+func rebuildDuringInFlightDifferentialSyncStillFullBackfills() async throws {
+  // Arrange: a cache already synced through May 20 (so start() takes the
+  // differential path — `phase` stays `.ready` throughout it, which is exactly
+  // why a UI guard on `phase` alone cannot rule out a rebuild racing this run).
+  // April is already cached history that a naive immediate reset would lose.
+  let context = try InMemoryStore.makeContext()
+  let today = makeDate(2026, 6, 15)
+  let stepLogStore = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
+  let marimoStore = SwiftDataMarimoStore(context: context)
+  try stepLogStore.upsert([DailySteps(day: makeDay(2026, 4, 5), steps: 5_000)])
+  try stepLogStore.saveAnchor(SyncAnchor(lastSyncedDate: makeDate(2026, 5, 20)))
+
+  let source = PausingDailyStepsSource(
+    earliest: makeDate(2026, 4, 1),
+    allDays: [
+      DailySteps(day: makeDay(2026, 4, 5), steps: 5_000),
+      DailySteps(day: makeDay(2026, 6, 14), steps: 8_000),
+    ]
+  )
+  let coordinator = StepSyncCoordinator(
+    source: source, stepLogStore: stepLogStore, marimoStore: marimoStore, calendar: testCalendar,
+    now: { today })
+  let model = StepSyncModel(coordinator: coordinator)
+
+  // Act: start the differential sync and let it reach its `dailySteps` read, then
+  // request a rebuild while that read is paused (`isSyncing` is still true).
+  let syncTask = Task { await model.start() }
+  await source.waitForFirstDailyStepsRequest()
+
+  let rebuildTask = Task { await model.rebuild() }
+  await rebuildTask.value
+
+  // Release the paused differential read; it completes and saves a fresh anchor
+  // before the queued rebuild gets its own turn.
+  source.releaseFirstDailyStepsRequest()
+  await syncTask.value
+
+  // Assert: the rebuild's turn ran strictly after the differential sync's own
+  // upsert/anchor save, so the reset caught a clean state and the redrive was a
+  // genuine full backfill — April survives instead of being silently dropped by
+  // a reset that landed between the differential sync's read and its write.
+  #expect(model.phase == .ready)
+  #expect(source.dailyStepsRequestCount == 2)
+  #expect(
+    try stepLogStore.logs(in: DayInterval(start: makeDay(2026, 4, 1), end: makeDay(2026, 6, 15)))
+      .map(\.day) == [makeDay(2026, 4, 5), makeDay(2026, 6, 14)]
+  )
 }
 
 @MainActor

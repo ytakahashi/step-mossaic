@@ -46,35 +46,76 @@ final class StepSyncModel {
 
   private let coordinator: StepSyncCoordinator
   /// Guards against a second concurrent run (e.g. a re-appear while a backfill is
-  /// still in flight) launching a duplicate sync against the same store.
+  /// still in flight) launching a duplicate turn against the same store.
   private var isSyncing = false
-  /// Records that another sync was requested while one was in flight, so auth
-  /// grants or re-appears are not lost when they race the current run.
-  private var needsFollowUpSync = false
+  /// What the currently in-flight run should do on its next turn once it loops,
+  /// so a call arriving mid-run is never lost. `.rebuild` always wins over a
+  /// pending `.sync` and is never downgraded back — see `request(_:)`.
+  private enum PendingRun: Equatable {
+    case none
+    case sync
+    case rebuild
+  }
+  private var pending: PendingRun = .none
 
   init(coordinator: StepSyncCoordinator) {
     self.coordinator = coordinator
   }
 
   /// Syncs the cache once, reporting backfill progress, then settles on `.ready`
-  /// or `.empty` from coverage. A call made while a sync is already running is
-  /// folded into one follow-up run after the current sync settles.
+  /// or `.empty` from coverage. A call made while a run is already in flight is
+  /// folded into one follow-up turn after the current run loops.
   ///
   /// Safe to invoke on every appearance and after an authorization grant: the
   /// guard collapses overlapping calls, and a settled run re-runs the cheap
   /// differential sync without flashing back to `.loading`.
   func start() async {
+    await request(.sync)
+  }
+
+  /// Wipes the cached daily logs and every frozen marimo, then redrives the
+  /// normal sync lifecycle as if this were a first launch.
+  ///
+  /// Serialized through the same run loop as `start()` rather than resetting
+  /// immediately: `phase` stays `.ready` for the whole *duration* of a
+  /// differential sync (e.g. one driven by a live tick), so a UI guard that only
+  /// checks `phase` cannot rule out a rebuild request racing an in-flight run.
+  /// Resetting out from under that run would let its own `upsert`/`saveAnchor`
+  /// land *after* the reset — leaving a partial cache with a fresh anchor, which
+  /// would send the very next turn down the differential path instead of a full
+  /// backfill and permanently lose history. Queuing through `request(_:)`
+  /// instead guarantees the reset always happens immediately before its own
+  /// dedicated `runOnce()`, inside one serialized turn.
+  func rebuild() async {
+    await request(.rebuild)
+  }
+
+  /// Runs `kind` now if nothing is in flight, otherwise folds it into the
+  /// in-flight run's next turn.
+  private func request(_ kind: PendingRun) async {
     guard !isSyncing else {
-      needsFollowUpSync = true
+      // A pending rebuild is never downgraded back to a plain sync, since the
+      // rebuild's redrive already covers whatever the plain sync would have done.
+      if kind == .rebuild || pending == .none {
+        pending = kind
+      }
       return
     }
     isSyncing = true
     defer { isSyncing = false }
 
+    var rebuildThisTurn = (kind == .rebuild)
     repeat {
-      needsFollowUpSync = false
+      pending = .none
+      if rebuildThisTurn {
+        // Drops before the reset so no observer sees stale `.ready` content in
+        // the gap before the reset resolves.
+        phase = .loading
+        try? coordinator.rebuildCache()
+      }
       await runOnce()
-    } while needsFollowUpSync
+      rebuildThisTurn = (pending == .rebuild)
+    } while pending != .none
   }
 
   /// Keeps the cache fresh during a foreground session: each live tick runs a

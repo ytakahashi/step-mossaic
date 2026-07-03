@@ -202,6 +202,19 @@ public final class StepSyncCoordinator {
     }
   }
 
+  /// Clears the persisted daily-step cache and every frozen marimo, including
+  /// locked months, so a full rebuild can start clean.
+  ///
+  /// HealthKit itself is never touched — this only wipes the SwiftData caches
+  /// derived from it. Re-populating the cleared stores is the caller's job: with
+  /// the anchor gone, the next `sync()` takes the same full-backfill path as a
+  /// first launch, and `refreshFrozenMarimos()` regenerates every past month from
+  /// scratch once that backfill lands.
+  public func rebuildCache() throws {
+    try stepLogStore.reset()
+    try marimoStore.reset()
+  }
+
   private func backfill(
     syncDate: Date,
     syncDay: Day,

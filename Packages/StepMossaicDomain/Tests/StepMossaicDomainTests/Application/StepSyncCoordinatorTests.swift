@@ -385,6 +385,36 @@ func refreshSkipsLockedMonth() throws {
   #expect(marimoStore.saveCallCount == 0)
 }
 
+// MARK: - Cache rebuild
+
+@MainActor
+@Test("Rebuilding the cache clears both the daily logs and the frozen marimos")
+func rebuildCacheClearsBothStores() throws {
+  // Arrange: a populated cache with a synced anchor and one frozen past month.
+  let store = FakeStepLogStore(
+    seedLogs: [
+      DailySteps(day: makeDay(2026, 4, 5), steps: 5_000),
+      DailySteps(day: makeDay(2026, 5, 10), steps: 6_000),
+    ],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 15))
+  )
+  let marimoStore = FakeMarimoStore()
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 6, 15), marimoStore: marimoStore)
+  try coordinator.refreshFrozenMarimos()
+  #expect(try marimoStore.allFrozen().isEmpty == false)
+
+  // Act
+  try coordinator.rebuildCache()
+
+  // Assert: both stores are empty, including the anchor, so the next sync takes
+  // the full-backfill path again.
+  #expect(
+    try store.logs(in: DayInterval(start: makeDay(2026, 1, 1), end: makeDay(2026, 12, 31))).isEmpty)
+  #expect(try store.anchorState() == nil)
+  #expect(try marimoStore.allFrozen().isEmpty)
+}
+
 @MainActor
 @Test("A past month entirely outside coverage is skipped, not frozen empty")
 func refreshSkipsMonthWithoutAvailableDays() throws {

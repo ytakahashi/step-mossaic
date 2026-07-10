@@ -4,28 +4,28 @@
 import PackageDescription
 
 let package = Package(
-    name: "StepMossaicDomain",
-    platforms: [
-        .iOS(.v26),
-        .macOS(.v26),
-    ],
-    products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
-        .library(
-            name: "StepMossaicDomain",
-            targets: ["StepMossaicDomain"]
-        ),
-    ],
-    targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
-        .target(
-            name: "StepMossaicDomain"
-        ),
-        .testTarget(
-            name: "StepMossaicDomainTests",
-            dependencies: ["StepMossaicDomain"]
-        ),
-    ],
-    swiftLanguageModes: [.v6]
+  name: "StepMossaicDomain",
+  platforms: [
+    .iOS(.v18),
+    .macOS(.v26),
+  ],
+  products: [
+    // Products define the executables and libraries a package produces, making them visible to other packages.
+    .library(
+      name: "StepMossaicDomain",
+      targets: ["StepMossaicDomain"]
+    )
+  ],
+  targets: [
+    // Targets are the basic building blocks of a package, defining a module or a test suite.
+    // Targets can depend on other targets in this package and products from dependencies.
+    .target(
+      name: "StepMossaicDomain"
+    ),
+    .testTarget(
+      name: "StepMossaicDomainTests",
+      dependencies: ["StepMossaicDomain"]
+    ),
+  ],
+  swiftLanguageModes: [.v6]
 )

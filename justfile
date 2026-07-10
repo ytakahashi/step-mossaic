@@ -8,8 +8,7 @@ format:
       StepMossaic/StepMossaic \
       StepMossaic/StepMossaicTests \
       StepMossaic/StepMossaicUITests \
-      Packages/StepMossaicDomain/Sources \
-      Packages/StepMossaicDomain/Tests
+      Packages/StepMossaicDomain
 
 # Lint all Swift files to check formatting rules
 lint:
@@ -17,8 +16,7 @@ lint:
       StepMossaic/StepMossaic \
       StepMossaic/StepMossaicTests \
       StepMossaic/StepMossaicUITests \
-      Packages/StepMossaicDomain/Sources \
-      Packages/StepMossaicDomain/Tests
+      Packages/StepMossaicDomain
 
 # Run the pure domain package tests
 test-domain:

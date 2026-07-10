@@ -108,11 +108,11 @@ xcrun simctl list devices available
 Format Swift files:
 
 ```sh
-xcrun swift-format format --in-place --recursive --parallel StepMossaic/StepMossaic StepMossaic/StepMossaicTests StepMossaic/StepMossaicUITests Packages/StepMossaicDomain/Sources Packages/StepMossaicDomain/Tests
+xcrun swift-format format --in-place --recursive --parallel StepMossaic/StepMossaic StepMossaic/StepMossaicTests StepMossaic/StepMossaicUITests Packages/StepMossaicDomain
 ```
 
 Lint Swift files:
 
 ```sh
-xcrun swift-format lint --recursive --parallel --strict StepMossaic/StepMossaic StepMossaic/StepMossaicTests StepMossaic/StepMossaicUITests Packages/StepMossaicDomain/Sources Packages/StepMossaicDomain/Tests
+xcrun swift-format lint --recursive --parallel --strict StepMossaic/StepMossaic StepMossaic/StepMossaicTests StepMossaic/StepMossaicUITests Packages/StepMossaicDomain
 ```

@@ -21,14 +21,12 @@ defaults:
     shell: bash -eo pipefail {0}
 
 env:
-  # Packages/StepMossaicDomain requires swift-tools-version 6.3 / macOS 26 platform,
-  # which macos-latest runners do not select by default.
   XCODE_APP: /Applications/Xcode_26.3.app
 
 jobs:
-  domain-and-lint:
+  lint-and-build:
 
-    runs-on: macos-latest
+    runs-on: macos-26
 
     steps:
     - uses: actions/checkout@v7
@@ -44,39 +42,6 @@ jobs:
           StepMossaic/StepMossaicUITests \
           Packages/StepMossaicDomain
 
-    - name: Run domain tests
-      run: swift test --package-path Packages/StepMossaicDomain
-
-  app-unit:
-
-    runs-on: macos-latest
-
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Select Xcode
-      run: sudo xcode-select -s "$XCODE_APP"
-
-    - name: List available simulators
-      run: xcrun simctl list devices available
-
-    - name: Run app unit tests
-      run: |
-        xcodebuild test \
-          -project StepMossaic/StepMossaic.xcodeproj \
-          -scheme StepMossaicUnitTests \
-          -destination "platform=iOS Simulator,name=iPhone 17" | xcbeautify
-
-  release-build:
-
-    runs-on: macos-latest
-
-    steps:
-    - uses: actions/checkout@v7
-
-    - name: Select Xcode
-      run: sudo xcode-select -s "$XCODE_APP"
-
     - name: Release build
       run: |
         xcodebuild build \
@@ -84,3 +49,23 @@ jobs:
           -scheme StepMossaic \
           -configuration Release \
           -destination "generic/platform=iOS Simulator" | xcbeautify
+
+  domain-app-unit-tests:
+
+    runs-on: macos-26
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Select Xcode
+      run: sudo xcode-select -s "$XCODE_APP"
+
+    - name: Run domain tests
+      run: swift test --package-path Packages/StepMossaicDomain
+
+    - name: Run app unit tests
+      run: |
+        xcodebuild test \
+          -project StepMossaic/StepMossaic.xcodeproj \
+          -scheme StepMossaicUnitTests \
+          -destination "platform=iOS Simulator,name=iPhone 17" | xcbeautify

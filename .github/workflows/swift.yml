@@ -1,0 +1,65 @@
+name: Swift
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - '*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  domain-and-lint:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Lint
+      run: xcrun swift-format lint --recursive --parallel --strict \
+              StepMossaic/StepMossaic \
+              StepMossaic/StepMossaicTests \
+              StepMossaic/StepMossaicUITests \
+              Packages/StepMossaicDomain
+
+    - name: Run domain tests
+      run: swift test --package-path Packages/StepMossaicDomain
+
+  app-unit:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: List available simulators
+      run: xcrun simctl list devices available
+
+    - name: Run app unit tests
+      run: xcodebuild test \
+              -project StepMossaic/StepMossaic.xcodeproj \
+              -scheme StepMossaicUnitTests \
+              -destination "platform=iOS Simulator,name=iPhone 17" | xcbeautify
+
+  release-build:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Release build
+      run: xcodebuild build \
+              -project StepMossaic/StepMossaic.xcodeproj \
+              -scheme StepMossaic \
+              -configuration Release \
+              -destination "generic/platform=iOS Simulator" | xcbeautify

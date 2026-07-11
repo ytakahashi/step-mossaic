@@ -31,41 +31,6 @@ final class StepSyncModel {
     case failed(hasCachedData: Bool)
   }
 
-  /// Coarse, privacy-safe classification of why `phase` settled on `.failed`,
-  /// kept separate from `Phase` so `Phase` stays a simple `Equatable` UI state
-  /// and no raw `Error` — which could carry step counts, dates, or other
-  /// HealthKit/SwiftData detail — ever reaches a view. Read by diagnostics and
-  /// tests; the initial-release UI copy does not vary by kind.
-  enum FailureKind: Equatable {
-    case source
-    case persistence
-    /// A failure that did not arrive as `StepSyncCoordinator.Failure` (not
-    /// expected today; a defensive fallback for a future unclassified error).
-    case unknown
-  }
-
-  /// One coordinator-level operation `StepSyncModel` drives per turn, named for
-  /// diagnostic logging only.
-  enum SyncOperation: String {
-    case sync
-    case refreshFrozenMarimos
-    case coverage
-    case rebuild
-  }
-
-  /// The result of one `SyncOperation`, reported without the underlying `Error`
-  /// so a diagnostics sink never sees HealthKit/SwiftData detail.
-  enum SyncOutcome: Equatable {
-    case success
-    case failure(FailureKind)
-  }
-
-  /// Reports one operation's outcome for on-device diagnostics. Injected as a
-  /// closure rather than a concrete `Logger` so tests can assert what was
-  /// reported without touching OSLog; the composition root wires the real
-  /// implementation (`SyncDiagnosticsLogger.report`).
-  typealias DiagnosticsReporter = @MainActor (SyncOperation, SyncOutcome) -> Void
-
   /// Stable identity for section observers: changes for both visible phase
   /// transitions and same-phase sync completions.
   struct ObservationKey: Equatable {
@@ -79,7 +44,7 @@ final class StepSyncModel {
   private(set) var completedSyncCount = 0
   /// Set alongside every `.failed` phase and cleared on the next fully-settled
   /// `.ready`/`.empty`; `nil` whenever `phase` is not `.failed`.
-  private(set) var failureKind: FailureKind?
+  private(set) var failureKind: DiagnosticFailureKind?
 
   /// Current observation identity for cache-backed sections.
   var observationKey: ObservationKey {
@@ -107,7 +72,7 @@ final class StepSyncModel {
 
   /// `reporter` defaults to a no-op so existing call sites (and most tests)
   /// don't need to care about diagnostics; the composition root passes
-  /// `SyncDiagnosticsLogger.report` explicitly for the real app.
+  /// `DiagnosticsLogger.report` explicitly for the real app.
   init(
     coordinator: StepSyncCoordinator,
     reporter: @escaping DiagnosticsReporter = { _, _ in }
@@ -304,7 +269,7 @@ final class StepSyncModel {
 
   /// Classifies a `sync()` failure from the `StepSyncCoordinator.Failure` it is
   /// expected to throw, falling back to `.unknown` for anything else.
-  private func classifyFailure(from error: Error) -> FailureKind {
+  private func classifyFailure(from error: Error) -> DiagnosticFailureKind {
     switch error {
     case StepSyncCoordinator.Failure.source: .source
     case StepSyncCoordinator.Failure.persistence: .persistence
@@ -319,7 +284,7 @@ final class StepSyncModel {
   /// that read itself fails, `hasCachedData` is `false` rather than assumed —
   /// this is still `.failed`, never the ordinary `.empty`, so a real cache is
   /// never mistaken for "no data".
-  private func settle(failing kind: FailureKind, operation: SyncOperation) {
+  private func settle(failing kind: DiagnosticFailureKind, operation: DiagnosticOperation) {
     let hasCachedData = (try? coordinator.coverage())?.firstAvailableDay != nil
     setPhase(.failed(hasCachedData: hasCachedData), failureKind: kind)
     reporter(operation, .failure(kind))
@@ -329,7 +294,8 @@ final class StepSyncModel {
   /// only `.failed` carries a failure classification. Centralizing assignments
   /// here prevents a retry or rebuild from leaving the previous failure attached
   /// to a later `.loading`, `.backfilling`, `.ready`, or `.empty` phase.
-  private func setPhase(_ newPhase: Phase, failureKind newFailureKind: FailureKind? = nil) {
+  private func setPhase(_ newPhase: Phase, failureKind newFailureKind: DiagnosticFailureKind? = nil)
+  {
     switch newPhase {
     case .failed:
       precondition(newFailureKind != nil, "A failed sync phase requires a failure kind")

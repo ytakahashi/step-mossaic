@@ -1,28 +1,17 @@
-import SwiftData
 import SwiftUI
 
 @main
 struct StepMossaicApp: App {
-  private let sharedModelContainer: ModelContainer
-  /// The composition root, owned for the app's lifetime.
-  @State private var environment: AppEnvironment
-
-  init() {
-    let container: ModelContainer
-    do {
-      container = try AppModelContainer.make()
-    } catch {
-      fatalError("Could not create ModelContainer: \(error)")
-    }
-    sharedModelContainer = container
-    _environment = State(initialValue: AppEnvironment(modelContainer: container))
-  }
+  /// Owns the container-resolution lifecycle for the app's lifetime; see
+  /// `AppRootView` for how each `AppStartupModel.State` renders.
+  @State private var startup = AppStartupModel(
+    makeContainer: { try AppModelContainer.make() },
+    reporter: DiagnosticsLogger.report
+  )
 
   var body: some Scene {
     WindowGroup {
-      ContentView()
-        .environment(environment)
+      AppRootView(startup: startup)
     }
-    .modelContainer(sharedModelContainer)
   }
 }

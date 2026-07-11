@@ -30,7 +30,7 @@ private func makeFailableModel(
   stepLogStore: FakeStepLogStore,
   marimoStore: FakeMarimoStore = FakeMarimoStore(),
   today: Date,
-  reporter: @escaping StepSyncModel.DiagnosticsReporter = { _, _ in }
+  reporter: @escaping DiagnosticsReporter = { _, _ in }
 ) -> StepSyncModel {
   let coordinator = StepSyncCoordinator(
     source: source, stepLogStore: stepLogStore, marimoStore: marimoStore, calendar: testCalendar,
@@ -880,7 +880,7 @@ func diagnosticsReportsOperationAndKindOnly() async throws {
   )
   let source = FakeStepSource()
   source.errorToThrow = TestError()
-  var reported: [(StepSyncModel.SyncOperation, StepSyncModel.SyncOutcome)] = []
+  var reported: [(DiagnosticOperation, DiagnosticOutcome)] = []
   let model = makeFailableModel(
     source: source, stepLogStore: stepLogStore, today: makeDate(2026, 6, 28),
     reporter: { operation, outcome in reported.append((operation, outcome)) }

@@ -123,28 +123,38 @@ struct MarimoView: View {
       let baseRadius = geometry.baseRadius(in: size)
 
       ZStack {
-        ZStack {
-          litBody(size: size, baseRadius: baseRadius)
-          // Fine stipple first, so the visible fibers sit on a dense base.
-          MarimoStipple(geometry: geometry, shades: shades, style: style)
-          MarimoFibers(geometry: geometry, shades: shades, style: style)
-          MarimoGrain(
-            geometry: geometry, dark: color(MarimoPalette.shadow), style: style
-          )
-          .blendMode(.softLight)
-          .opacity(style.grainOpacity)
-        }
-        // Feather the silhouette so the solid body fades into the rim fibers rather
-        // than ending at a crisp outline that reads as a hard boundary.
-        .mask {
-          MarimoBlob(geometry: geometry)
-            .fill(.black)
-            .blur(radius: baseRadius * style.edgeFeatherFraction)
-        }
+        maskedTextureLayers(size: size, baseRadius: baseRadius)
         // Rim fibers stay unmasked so individual strands still poke past the now-soft
         // edge and blend the body into its surroundings.
         MarimoRimFuzz(geometry: geometry, shades: shades, style: style)
       }
+    }
+  }
+
+  // Split out of `body`: on an older type checker, the nested ZStack plus the
+  // `.mask` trailing closure and modifier chain as one expression hit "unable to
+  // type-check this expression in reasonable time".
+
+  /// The solid body and its texture layers, feathered into the rim fibers so the
+  /// silhouette fades rather than ending at a crisp outline.
+  private func maskedTextureLayers(size: CGSize, baseRadius: Double) -> some View {
+    textureLayers(size: size, baseRadius: baseRadius)
+      .mask {
+        MarimoBlob(geometry: geometry)
+          .fill(.black)
+          .blur(radius: baseRadius * style.edgeFeatherFraction)
+      }
+  }
+
+  private func textureLayers(size: CGSize, baseRadius: Double) -> some View {
+    ZStack {
+      litBody(size: size, baseRadius: baseRadius)
+      // Fine stipple first, so the visible fibers sit on a dense base.
+      MarimoStipple(geometry: geometry, shades: shades, style: style)
+      MarimoFibers(geometry: geometry, shades: shades, style: style)
+      MarimoGrain(geometry: geometry, dark: color(MarimoPalette.shadow), style: style)
+        .blendMode(.softLight)
+        .opacity(style.grainOpacity)
     }
   }
 

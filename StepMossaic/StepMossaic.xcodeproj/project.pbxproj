@@ -414,7 +414,9 @@
 				DEVELOPMENT_TEAM = 5Y2GAB3PLW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Step Mossaic reads your step count to visualize your walking rhythm.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Step Mossaic does not write any data to Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -453,7 +455,9 @@
 				DEVELOPMENT_TEAM = 5Y2GAB3PLW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Step Mossaic reads your step count to visualize your walking rhythm.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Step Mossaic does not write any data to Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

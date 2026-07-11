@@ -65,9 +65,7 @@ jobs:
         xcodebuild test \
           -project StepMossaic/StepMossaic.xcodeproj \
           -scheme StepMossaicUnitTests \
-          -destination "platform=iOS Simulator,name=iPhone 17" \
-          SWIFT_SUPPRESS_WARNINGS=NO \
-          OTHER_SWIFT_FLAGS="-Xfrontend -warn-long-function-bodies=50 -Xfrontend -warn-long-expression-type-checking=50"
+          -destination "platform=iOS Simulator,name=iPhone 17" | xcbeautify
 
   release-build:
 
@@ -85,6 +83,4 @@ jobs:
           -project StepMossaic/StepMossaic.xcodeproj \
           -scheme StepMossaic \
           -configuration Release \
-          -destination "generic/platform=iOS Simulator" \
-          SWIFT_SUPPRESS_WARNINGS=NO \
-          OTHER_SWIFT_FLAGS="-Xfrontend -warn-long-function-bodies=50 -Xfrontend -warn-long-expression-type-checking=50"
+          -destination "generic/platform=iOS Simulator" | xcbeautify

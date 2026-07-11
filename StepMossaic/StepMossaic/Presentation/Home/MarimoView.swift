@@ -293,27 +293,28 @@ private struct MarimoFibers: View {
 
       for _ in 0..<style.fiberCount {
         // sqrt keeps the placement uniform by area, not bunched at the center.
-        let position = Double.random(in: 0...1, using: &rng).squareRoot() * base * 0.99
-        let placeAngle = Double.random(in: 0..<(2 * .pi), using: &rng)
-        let dx = cos(placeAngle) * position
-        let dy = sin(placeAngle) * position
-        let nx = dx / base
-        let ny = dy / base
+        let position: Double = Double.random(in: 0...1, using: &rng).squareRoot() * base * 0.99
+        let placeAngle: Double = Double.random(in: 0..<(2 * .pi), using: &rng)
+        let dx: Double = cos(placeAngle) * position
+        let dy: Double = sin(placeAngle) * position
+        let nx: Double = dx / base
+        let ny: Double = dy / base
         let point = CGPoint(x: center.x + dx, y: center.y + dy)
 
         // Follow a coherent flow field, combing toward the tangent (along the
         // surface) as fibers approach the rim, then add a little jitter.
-        let tangential = atan2(dy, dx) + .pi / 2
-        let flowAngle = flow.value(nx, ny) * .pi
-        let distanceFraction = min(position / base, 1)
-        let coherent = lerpAngle(flowAngle, tangential, style.fiberSurfaceFollow * distanceFraction)
-        let orientation =
-          coherent
-          + Double.random(in: -style.fiberAngleJitter...style.fiberAngleJitter, using: &rng)
+        let tangential: Double = atan2(dy, dx) + .pi / 2
+        let flowAngle: Double = flow.value(nx, ny) * .pi
+        let distanceFraction: Double = min(position / base, 1)
+        let coherent: Double = lerpAngle(
+          flowAngle, tangential, style.fiberSurfaceFollow * distanceFraction)
+        let angleJitter: Double = Double.random(
+          in: -style.fiberAngleJitter...style.fiberAngleJitter, using: &rng)
+        let orientation: Double = coherent + angleJitter
 
-        let length =
+        let length: Double =
           base * biasedRandom(style.fiberLength, bias: style.fiberLengthBias, using: &rng)
-        let half = length / 2
+        let half: Double = length / 2
         let start = CGPoint(
           x: point.x - cos(orientation) * half, y: point.y - sin(orientation) * half)
         let end = CGPoint(
@@ -321,10 +322,11 @@ private struct MarimoFibers: View {
 
         // Tone from the lit sphere, pushed by the clump field into denser/sparser
         // patches, plus a little per-fiber jitter.
-        let lit =
-          sphereDiffuse(dx: dx, dy: dy, radius: base, style: style)
-          + style.fiberClumpStrength * clump.value(nx, ny)
-          + Double.random(in: -style.fiberShadeJitter...style.fiberShadeJitter, using: &rng)
+        let clumpTerm: Double = style.fiberClumpStrength * clump.value(nx, ny)
+        let shadeJitter: Double = Double.random(
+          in: -style.fiberShadeJitter...style.fiberShadeJitter, using: &rng)
+        let lit: Double =
+          sphereDiffuse(dx: dx, dy: dy, radius: base, style: style) + clumpTerm + shadeJitter
         addSegment(to: &bands[bandIndex(lit, count: shades.count)], start, end)
       }
 
@@ -388,20 +390,28 @@ private struct MarimoRimFuzz: View {
 
       var bands = [Path](repeating: Path(), count: shades.count)
 
+      // Explicit `Double`/`CGPoint` annotations below split what was previously one
+      // large inferred expression per line — on this toolchain, the combined
+      // overload resolution for the un-annotated arithmetic took over 10s ("unable
+      // to type-check this expression in reasonable time").
       for _ in 0..<style.fuzzCount {
-        let angle = Double.random(in: 0..<(2 * .pi), using: &rng)
-        let anchor = geometry.outlinePoint(at: angle, in: size)
-        let outward =
-          angle + Double.random(in: -style.fuzzOutwardJitter...style.fuzzOutwardJitter, using: &rng)
-        let length = base * biasedRandom(style.fuzzLength, bias: style.fuzzLengthBias, using: &rng)
+        let angle: Double = Double.random(in: 0..<(2 * .pi), using: &rng)
+        let anchor: CGPoint = geometry.outlinePoint(at: angle, in: size)
+        let outwardJitter: Double = Double.random(
+          in: -style.fuzzOutwardJitter...style.fuzzOutwardJitter, using: &rng)
+        let outward: Double = angle + outwardJitter
+        let length: Double =
+          base * biasedRandom(style.fuzzLength, bias: style.fuzzLengthBias, using: &rng)
+        let dxOut: Double = cos(outward) * length
+        let dyOut: Double = sin(outward) * length
         let start = CGPoint(
-          x: anchor.x - cos(outward) * length * style.fuzzInsetFraction,
-          y: anchor.y - sin(outward) * length * style.fuzzInsetFraction)
+          x: anchor.x - dxOut * style.fuzzInsetFraction,
+          y: anchor.y - dyOut * style.fuzzInsetFraction)
         let end = CGPoint(
-          x: anchor.x + cos(outward) * length * (1 - style.fuzzInsetFraction),
-          y: anchor.y + sin(outward) * length * (1 - style.fuzzInsetFraction))
+          x: anchor.x + dxOut * (1 - style.fuzzInsetFraction),
+          y: anchor.y + dyOut * (1 - style.fuzzInsetFraction))
 
-        let lit = sphereDiffuse(
+        let lit: Double = sphereDiffuse(
           dx: anchor.x - center.x, dy: anchor.y - center.y, radius: base, style: style)
         addSegment(to: &bands[bandIndex(lit, count: shades.count)], start, end)
       }
@@ -428,10 +438,10 @@ private struct MarimoGrain: View {
 
       var dots = Path()
       for _ in 0..<style.grainCount {
-        let position = Double.random(in: 0...1, using: &rng).squareRoot() * base
-        let angle = Double.random(in: 0..<(2 * .pi), using: &rng)
+        let position: Double = Double.random(in: 0...1, using: &rng).squareRoot() * base
+        let angle: Double = Double.random(in: 0..<(2 * .pi), using: &rng)
         let dot = CGPoint(x: center.x + cos(angle) * position, y: center.y + sin(angle) * position)
-        let radius = style.grainDotRadius
+        let radius: Double = style.grainDotRadius
         dots.addEllipse(
           in: CGRect(x: dot.x - radius, y: dot.y - radius, width: radius * 2, height: radius * 2))
       }

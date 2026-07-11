@@ -1,18 +1,14 @@
 import Foundation
+import StepMossaicDomain
 
-@testable import StepMossaicDomain
-
-/// In-memory `MarimoStore` for sync-coordinator tests.
-///
-/// Plain (non-`Sendable`) like the real store: it is only ever driven from the
-/// main actor through the coordinator, so no synchronization is needed.
+/// In-memory `MarimoStore` for `StepSyncModel` failure-path tests, mirroring
+/// the fake of the same name in `StepMossaicDomainTests`. See
+/// `FakeStepLogStore` for why a fake rather than the real SwiftData store is
+/// used to simulate persistence failures.
 final class FakeMarimoStore: MarimoStore {
   private(set) var storage: [YearMonth: FrozenMarimo] = [:]
-  /// Number of `save` calls, so tests can tell that a locked month was skipped
-  /// (never re-saved) rather than regenerated.
-  private(set) var saveCallCount = 0
   /// When set, every call throws this instead of returning, so tests can force
-  /// a persistence failure out of `refreshFrozenMarimos()`/`rebuildCache()`.
+  /// a persistence failure out of `refreshFrozenMarimos()` or `rebuildCache()`.
   var errorToThrow: Error?
 
   init(seed: [FrozenMarimo] = []) {
@@ -26,7 +22,6 @@ final class FakeMarimoStore: MarimoStore {
 
   func save(_ marimo: FrozenMarimo) throws {
     if let errorToThrow { throw errorToThrow }
-    saveCallCount += 1
     storage[marimo.yearMonth] = marimo
   }
 

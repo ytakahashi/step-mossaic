@@ -44,9 +44,11 @@ final class GrowingMarimoViewModel {
   /// in its own area without itself triggering a sync:
   /// - `.loading` / `.backfilling` reflect straight through.
   /// - `.ready` / `.empty` recompute this month's marimo from the cache.
+  /// - `.failed` currently reads the same as `.loading`; a dedicated failed
+  ///   presentation that keeps showing the last-good marimo lands separately.
   func observe(_ syncPhase: StepSyncModel.Phase) async {
     switch syncPhase {
-    case .loading:
+    case .loading, .failed:
       phase = .loading
     case .backfilling(let completed, let total):
       phase = .backfilling(completedDays: completed, totalDays: total)

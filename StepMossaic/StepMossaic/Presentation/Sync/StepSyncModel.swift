@@ -25,7 +25,46 @@ final class StepSyncModel {
     case ready
     /// Sync settled but no step data exists at all.
     case empty
+    /// Sync, cache-freshness reconciliation, or coverage read failed this turn.
+    /// `hasCachedData` reports whether a previously-synced cache can still be
+    /// shown, so a section can keep rendering it instead of blanking out.
+    case failed(hasCachedData: Bool)
   }
+
+  /// Coarse, privacy-safe classification of why `phase` settled on `.failed`,
+  /// kept separate from `Phase` so `Phase` stays a simple `Equatable` UI state
+  /// and no raw `Error` — which could carry step counts, dates, or other
+  /// HealthKit/SwiftData detail — ever reaches a view. Read by diagnostics and
+  /// tests; the initial-release UI copy does not vary by kind.
+  enum FailureKind: Equatable {
+    case source
+    case persistence
+    /// A failure that did not arrive as `StepSyncCoordinator.Failure` (not
+    /// expected today; a defensive fallback for a future unclassified error).
+    case unknown
+  }
+
+  /// One coordinator-level operation `StepSyncModel` drives per turn, named for
+  /// diagnostic logging only.
+  enum SyncOperation: String {
+    case sync
+    case refreshFrozenMarimos
+    case coverage
+    case rebuild
+  }
+
+  /// The result of one `SyncOperation`, reported without the underlying `Error`
+  /// so a diagnostics sink never sees HealthKit/SwiftData detail.
+  enum SyncOutcome: Equatable {
+    case success
+    case failure(FailureKind)
+  }
+
+  /// Reports one operation's outcome for on-device diagnostics. Injected as a
+  /// closure rather than a concrete `Logger` so tests can assert what was
+  /// reported without touching OSLog; the composition root wires the real
+  /// implementation (`SyncDiagnosticsLogger.report`).
+  typealias DiagnosticsReporter = @MainActor (SyncOperation, SyncOutcome) -> Void
 
   /// Stable identity for section observers: changes for both visible phase
   /// transitions and same-phase sync completions.
@@ -38,6 +77,9 @@ final class StepSyncModel {
   /// Monotonic completion count so observers can refresh after a differential
   /// sync that settles back to the same phase.
   private(set) var completedSyncCount = 0
+  /// Set alongside every `.failed` phase and cleared on the next fully-settled
+  /// `.ready`/`.empty`; `nil` whenever `phase` is not `.failed`.
+  private(set) var failureKind: FailureKind?
 
   /// Current observation identity for cache-backed sections.
   var observationKey: ObservationKey {
@@ -45,6 +87,7 @@ final class StepSyncModel {
   }
 
   private let coordinator: StepSyncCoordinator
+  private let reporter: DiagnosticsReporter
   /// What the currently in-flight run should do on its next turn once it loops,
   /// so a call arriving mid-run is never lost. `.rebuild` always wins over a
   /// pending `.sync`/`.liveSync` and is never downgraded back — see
@@ -62,8 +105,23 @@ final class StepSyncModel {
   /// task body starts still fold into `pending` instead of launching a duplicate.
   private var runTask: Task<Void, Never>?
 
-  init(coordinator: StepSyncCoordinator) {
+  /// `reporter` defaults to a no-op so existing call sites (and most tests)
+  /// don't need to care about diagnostics; the composition root passes
+  /// `SyncDiagnosticsLogger.report` explicitly for the real app.
+  init(
+    coordinator: StepSyncCoordinator,
+    reporter: @escaping DiagnosticsReporter = { _, _ in }
+  ) {
     self.coordinator = coordinator
+    self.reporter = reporter
+  }
+
+  /// Re-requests a sync after `.failed`, through the same serialized queue as
+  /// `start()`. A separate name from `start()` so call sites read as "the user
+  /// asked to retry" rather than "a section appeared", even though both drive
+  /// the identical sync path.
+  func retry() async {
+    await request(.sync)
   }
 
   /// Syncs the cache once, reporting backfill progress, then settles on `.ready`
@@ -142,13 +200,26 @@ final class StepSyncModel {
     var current = kind
     repeat {
       pending = .none
+      var rebuildSucceeded = true
       if current == .rebuild {
         // Drops before the reset so no observer sees stale `.ready` content in
         // the gap before the reset resolves.
-        phase = .loading
-        try? coordinator.rebuildCache()
+        setPhase(.loading)
+        do {
+          try coordinator.rebuildCache()
+          reporter(.rebuild, .success)
+        } catch {
+          // Not left un-cleared: an unreset store must never read as a
+          // completed rebuild, so this turn settles `.failed` immediately
+          // instead of continuing into a sync over a possibly-partial wipe.
+          rebuildSucceeded = false
+          settle(failing: .persistence, operation: .rebuild)
+          completedSyncCount += 1
+        }
       }
-      await runOnce()
+      if rebuildSucceeded {
+        await runOnce()
+      }
       current = pending
     } while pending != .none
   }
@@ -175,26 +246,42 @@ final class StepSyncModel {
     }
   }
 
-  /// Executes one coordinator sync and publishes its settled result.
+  /// Executes one coordinator sync turn and publishes its settled result.
+  ///
+  /// Each step only runs once the previous one has succeeded: `.ready`/`.empty`
+  /// require sync, frozen-marimo reconciliation, *and* the coverage read to all
+  /// succeed, so a partial failure never reads as a clean settle. Whichever step
+  /// fails first ends the turn on `.failed` rather than continuing over data
+  /// that may now be stale relative to what the failed step would have changed.
   private func runOnce() async {
     do {
       try await coordinator.sync { [weak self] progress in
         // Only the long initial backfill drives a progress phase; the quick
         // differential sync stays on the current phase to avoid a progress flash.
         if case .backfilling(let completed, let total) = progress {
-          self?.phase = .backfilling(completedDays: completed, totalDays: total)
+          self?.setPhase(.backfilling(completedDays: completed, totalDays: total))
         }
       }
     } catch {
-      // Swallow: read-only HealthKit access can't be confirmed, so render whatever
-      // coverage reports from the cache rather than surfacing an error.
+      settle(failing: classifyFailure(from: error), operation: .sync)
+      completedSyncCount += 1
+      return
     }
+    reporter(.sync, .success)
+
     // Reconcile the frozen monthly marimos from the freshly-synced cache so the
-    // shelf reflects newly completed and grace-period months. Done before the
-    // count bumps, so observers see the updated store on the same observation key.
-    // Swallowed like the sync: a read-only failure should not block rendering what
-    // coverage already has.
-    try? coordinator.refreshFrozenMarimos()
+    // shelf reflects newly completed and grace-period months. A failure here
+    // still leaves the daily cache trustworthy, but the turn as a whole did not
+    // fully succeed, so it settles `.failed` rather than `.ready`/`.empty`.
+    do {
+      try coordinator.refreshFrozenMarimos()
+    } catch {
+      settle(failing: .persistence, operation: .refreshFrozenMarimos)
+      completedSyncCount += 1
+      return
+    }
+    reporter(.refreshFrozenMarimos, .success)
+
     resolveSettledPhase()
     completedSyncCount += 1
   }
@@ -202,9 +289,55 @@ final class StepSyncModel {
   /// Settles the phase from coverage alone, with no live source query.
   ///
   /// No first available day means no step data has ever existed: show `.empty`
-  /// rather than `.ready` over an all-unavailable cache.
+  /// rather than `.ready` over an all-unavailable cache. A coverage read
+  /// failure is itself a `.persistence` failure (`coverage()` only reads the
+  /// cache) — it must not be mistaken for the ordinary "no data" `.empty`.
   private func resolveSettledPhase() {
-    let hasData = (try? coordinator.coverage())?.firstAvailableDay != nil
-    phase = hasData ? .ready : .empty
+    do {
+      let coverage = try coordinator.coverage()
+      setPhase(coverage.firstAvailableDay != nil ? .ready : .empty)
+      reporter(.coverage, .success)
+    } catch {
+      settle(failing: .persistence, operation: .coverage)
+    }
+  }
+
+  /// Classifies a `sync()` failure from the `StepSyncCoordinator.Failure` it is
+  /// expected to throw, falling back to `.unknown` for anything else.
+  private func classifyFailure(from error: Error) -> FailureKind {
+    switch error {
+    case StepSyncCoordinator.Failure.source: .source
+    case StepSyncCoordinator.Failure.persistence: .persistence
+    default: .unknown
+    }
+  }
+
+  /// Moves to `.failed`, preserving whether a previously-synced cache can still
+  /// be shown, and reports the outcome for diagnostics.
+  ///
+  /// Cache presence is re-derived from `coverage()` on a best-effort basis: if
+  /// that read itself fails, `hasCachedData` is `false` rather than assumed —
+  /// this is still `.failed`, never the ordinary `.empty`, so a real cache is
+  /// never mistaken for "no data".
+  private func settle(failing kind: FailureKind, operation: SyncOperation) {
+    let hasCachedData = (try? coordinator.coverage())?.firstAvailableDay != nil
+    setPhase(.failed(hasCachedData: hasCachedData), failureKind: kind)
+    reporter(operation, .failure(kind))
+  }
+
+  /// Publishes one phase transition while preserving the state invariant that
+  /// only `.failed` carries a failure classification. Centralizing assignments
+  /// here prevents a retry or rebuild from leaving the previous failure attached
+  /// to a later `.loading`, `.backfilling`, `.ready`, or `.empty` phase.
+  private func setPhase(_ newPhase: Phase, failureKind newFailureKind: FailureKind? = nil) {
+    switch newPhase {
+    case .failed:
+      precondition(newFailureKind != nil, "A failed sync phase requires a failure kind")
+    default:
+      precondition(newFailureKind == nil, "Only a failed sync phase can carry a failure kind")
+    }
+
+    failureKind = newFailureKind
+    phase = newPhase
   }
 }

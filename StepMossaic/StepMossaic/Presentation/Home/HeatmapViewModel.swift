@@ -129,9 +129,11 @@ final class HeatmapViewModel {
   /// - `.loading` / `.backfilling` reflect straight through.
   /// - `.ready` / `.empty` re-render from the cache; `reload()` then decides
   ///   `.ready` vs `.empty` from coverage, staying consistent with the owner.
+  /// - `.failed` currently reads the same as `.loading`; a dedicated failed
+  ///   presentation that keeps showing the last-good cache lands separately.
   func observe(_ syncPhase: StepSyncModel.Phase) async {
     switch syncPhase {
-    case .loading:
+    case .loading, .failed:
       phase = .loading
     case .backfilling(let completed, let total):
       phase = .backfilling(completedDays: completed, totalDays: total)

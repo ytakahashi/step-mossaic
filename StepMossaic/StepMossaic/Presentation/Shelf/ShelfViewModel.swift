@@ -58,9 +58,11 @@ final class ShelfViewModel {
   ///   per-section progress, so an in-flight backfill reads the same as a first
   ///   load.
   /// - `.ready` / `.empty` reload the frozen snapshots from the store.
+  /// - `.failed` currently reads the same as `.loading`; a dedicated failed
+  ///   presentation that keeps showing the last-good shelf lands separately.
   func observe(_ syncPhase: StepSyncModel.Phase) async {
     switch syncPhase {
-    case .loading, .backfilling:
+    case .loading, .backfilling, .failed:
       phase = .loading
     case .ready, .empty:
       reload()

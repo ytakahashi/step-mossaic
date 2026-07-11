@@ -50,7 +50,7 @@ final class AppEnvironment {
     self.marimoStore = marimoStore
     self.coordinator = coordinator
     self.calendar = calendar
-    self.syncModel = StepSyncModel(coordinator: coordinator)
+    self.syncModel = StepSyncModel(coordinator: coordinator, reporter: SyncDiagnosticsLogger.report)
   }
 
   /// Builds the Home today-steps view model bound to the shared step source.

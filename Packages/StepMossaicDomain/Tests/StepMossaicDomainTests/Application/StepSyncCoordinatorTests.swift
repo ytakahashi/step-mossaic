@@ -434,3 +434,84 @@ func refreshSkipsMonthWithoutAvailableDays() throws {
   // Assert: only January, which has covered days, is frozen.
   #expect(try marimoStore.allFrozen().map(\.yearMonth) == [YearMonth(year: 2026, month: 1)])
 }
+
+private struct TestError: Error {}
+
+@MainActor
+@Test("A first sync backfill classifies a source failure as .source")
+func backfillSourceFailureClassifiesAsSource() async throws {
+  // Arrange: no anchor yet, so `sync()` takes the backfill path, and the source
+  // fails on its first call (`earliestSampleDate()`).
+  let source = FakeStepSource()
+  source.errorToThrow = TestError()
+  let store = FakeStepLogStore()
+  let coordinator = makeCoordinator(source: source, store: store, today: makeDate(2026, 6, 28))
+
+  // Act & Assert
+  await #expect(throws: StepSyncCoordinator.Failure.source) {
+    try await coordinator.sync()
+  }
+}
+
+@MainActor
+@Test("A first sync backfill classifies an upsert failure as .persistence")
+func backfillPersistenceFailureClassifiesAsPersistence() async throws {
+  // Arrange: the source succeeds, but the store fails once samples are ready to
+  // be written back.
+  let source = FakeStepSource(
+    earliest: makeDate(2026, 6, 1), stepsByDay: [makeDay(2026, 6, 27): 8_432])
+  let store = FakeStepLogStore()
+  let coordinator = makeCoordinator(source: source, store: store, today: makeDate(2026, 6, 28))
+  store.errorToThrow = TestError()
+
+  // Act & Assert
+  await #expect(throws: StepSyncCoordinator.Failure.persistence) {
+    try await coordinator.sync()
+  }
+}
+
+@MainActor
+@Test("A differential sync classifies a source failure as .source")
+func differentialSourceFailureClassifiesAsSource() async throws {
+  // Arrange: an existing anchor takes the differential path, which reads the
+  // source before ever touching the store.
+  let store = FakeStepLogStore(anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 20)))
+  let source = FakeStepSource()
+  source.errorToThrow = TestError()
+  let coordinator = makeCoordinator(source: source, store: store, today: makeDate(2026, 6, 28))
+
+  // Act & Assert
+  await #expect(throws: StepSyncCoordinator.Failure.source) {
+    try await coordinator.sync()
+  }
+}
+
+@MainActor
+@Test("A differential sync classifies a saveAnchor failure as .persistence")
+func differentialPersistenceFailureClassifiesAsPersistence() async throws {
+  // Arrange: the source succeeds, but the store fails on the final anchor save.
+  let store = FakeStepLogStore(anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 20)))
+  let source = FakeStepSource(stepsByDay: [makeDay(2026, 6, 27): 8_432])
+  let coordinator = makeCoordinator(source: source, store: store, today: makeDate(2026, 6, 28))
+  store.errorToThrow = TestError()
+
+  // Act & Assert
+  await #expect(throws: StepSyncCoordinator.Failure.persistence) {
+    try await coordinator.sync()
+  }
+}
+
+@MainActor
+@Test("Reading the stored anchor before a sync classifies as .persistence")
+func anchorReadFailureClassifiesAsPersistence() async throws {
+  // Arrange: `anchorState()` itself fails, before either path is chosen.
+  let store = FakeStepLogStore()
+  store.errorToThrow = TestError()
+  let coordinator = makeCoordinator(
+    source: FakeStepSource(), store: store, today: makeDate(2026, 6, 28))
+
+  // Act & Assert
+  await #expect(throws: StepSyncCoordinator.Failure.persistence) {
+    try await coordinator.sync()
+  }
+}

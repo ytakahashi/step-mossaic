@@ -114,9 +114,13 @@ struct SettingsView: View {
   /// `.backfilling` is a UX nicety (avoids a button that looks pressable but
   /// does nothing visible yet); the actual race safety comes from
   /// `StepSyncModel`'s own request queue regardless of this guard.
+  ///
+  /// `.failed` is also enabled: Rebuild remains a usable (if heavier-handed)
+  /// retry path when the shared sync has failed, alongside a lighter Retry
+  /// affordance that lands separately.
   private var canRebuild: Bool {
     switch syncModel.phase {
-    case .ready, .empty: true
+    case .ready, .empty, .failed: true
     case .loading, .backfilling: false
     }
   }

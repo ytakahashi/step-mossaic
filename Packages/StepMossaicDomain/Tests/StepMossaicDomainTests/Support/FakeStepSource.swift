@@ -13,6 +13,9 @@ final class FakeStepSource: StepSource, @unchecked Sendable {
   /// HealthKit omitting empty buckets.
   var stepsByDay: [Day: Int]
   var status: HealthAuthorizationStatus
+  /// When set, every call throws this instead of returning, so tests can force
+  /// a `StepSyncCoordinator.Failure.source` classification.
+  var errorToThrow: Error?
   private let calendar: Calendar
   /// Every interval `dailySteps(in:)` was asked for, in call order, so tests can
   /// assert the chunking and the differential window.
@@ -30,9 +33,13 @@ final class FakeStepSource: StepSource, @unchecked Sendable {
     self.calendar = calendar
   }
 
-  func earliestSampleDate() async throws -> Date? { earliest }
+  func earliestSampleDate() async throws -> Date? {
+    if let errorToThrow { throw errorToThrow }
+    return earliest
+  }
 
   func dailySteps(in interval: DayInterval) async throws -> [DailySteps] {
+    if let errorToThrow { throw errorToThrow }
     requestedIntervals.append(interval)
     return interval.days(calendar: calendar).compactMap { day in
       guard let steps = stepsByDay[day] else { return nil }

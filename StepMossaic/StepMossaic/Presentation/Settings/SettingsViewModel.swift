@@ -52,6 +52,15 @@ final class SettingsViewModel {
     openURL(url)
   }
 
+  /// The public Privacy Policy page.
+  private static let privacyPolicyURLString = "https://ytakahashi.github.io/step-mossaic/privacy/"
+
+  /// Opens the public Privacy Policy page in the user's default browser.
+  func openPrivacyPolicy() {
+    guard let url = URL(string: Self.privacyPolicyURLString) else { return }
+    openURL(url)
+  }
+
   /// Wipes the cached daily logs and frozen marimos, then redrives a full
   /// backfill, via the shared sync model.
   func rebuildCache() async {

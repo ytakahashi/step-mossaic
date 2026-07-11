@@ -29,6 +29,14 @@ struct SettingsView: View {
           settingContent
         }
 
+        Section {
+          privacyContent
+        } header: {
+          Text("Privacy Policy")
+        } footer: {
+          Text("Opens the Privacy Policy in your browser.")
+        }
+
         Section("Data") {
           rebuildContent
         }
@@ -85,6 +93,13 @@ struct SettingsView: View {
   private var settingContent: some View {
     Button("Open App Settings") {
       model.openHealthSettings()
+    }
+  }
+
+  @ViewBuilder
+  private var privacyContent: some View {
+    Button("Privacy Policy") {
+      model.openPrivacyPolicy()
     }
   }
 

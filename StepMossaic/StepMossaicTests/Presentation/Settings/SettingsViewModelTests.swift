@@ -70,6 +70,24 @@ func settingsOpenHealthSettingsOpensSettingsURL() throws {
 }
 
 @MainActor
+@Test("Opening the Privacy Policy invokes the injected URL opener with the published page")
+func settingsOpenPrivacyPolicyOpensPublishedURL() throws {
+  // Arrange
+  var openedURLs: [URL] = []
+  let (model, _) = try makeSettingsModel(
+    source: FakeStepSource(status: .requested),
+    openURL: { openedURLs.append($0) }
+  )
+
+  // Act
+  model.openPrivacyPolicy()
+
+  // Assert: the exact published Privacy Policy URL, not the Health/App
+  // Settings URL used elsewhere on this screen.
+  #expect(openedURLs == [URL(string: "https://ytakahashi.github.io/step-mossaic/privacy/")!])
+}
+
+@MainActor
 @Test("Rebuilding the cache delegates to the shared sync model")
 func settingsRebuildCacheDelegatesToSyncModel() async throws {
   // Arrange: a cache already settled on ready, so a rebuild has something to redo.

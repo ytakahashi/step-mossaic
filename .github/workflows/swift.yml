@@ -16,13 +16,17 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
 jobs:
   domain-and-lint:
 
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Lint
       run: |
@@ -40,7 +44,12 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
+
+    - name: List available Xcode installations
+      run: |
+        ls /Applications | grep Xcode
+        xcodebuild -version
 
     - name: List available simulators
       run: xcrun simctl list devices available
@@ -57,7 +66,12 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
+
+    - name: List available Xcode installations
+      run: |
+        ls /Applications | grep Xcode
+        xcodebuild -version
 
     - name: Release build
       run: |

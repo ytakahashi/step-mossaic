@@ -20,6 +20,11 @@ defaults:
   run:
     shell: bash -eo pipefail {0}
 
+env:
+  # Packages/StepMossaicDomain requires swift-tools-version 6.3 / macOS 26 platform,
+  # which macos-latest runners do not select by default.
+  XCODE_APP: /Applications/Xcode_26.3.app
+
 jobs:
   domain-and-lint:
 
@@ -27,6 +32,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+
+    - name: Select Xcode
+      run: sudo xcode-select -s "$XCODE_APP"
 
     - name: Lint
       run: |
@@ -46,10 +54,8 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: List available Xcode installations
-      run: |
-        ls /Applications | grep Xcode
-        xcodebuild -version
+    - name: Select Xcode
+      run: sudo xcode-select -s "$XCODE_APP"
 
     - name: List available simulators
       run: xcrun simctl list devices available
@@ -68,10 +74,8 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: List available Xcode installations
-      run: |
-        ls /Applications | grep Xcode
-        xcodebuild -version
+    - name: Select Xcode
+      run: sudo xcode-select -s "$XCODE_APP"
 
     - name: Release build
       run: |

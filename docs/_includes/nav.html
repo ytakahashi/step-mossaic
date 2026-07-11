@@ -1,0 +1,8 @@
+<nav class="top">
+  <span class="nav-left">
+    {% if page.url != '/' %}<a class="brand" href="{{ '/' | relative_url }}">&larr; Step Mossaic</a>{% endif %}
+  </span>
+  <span class="nav-right">
+    {% if page.url != '/privacy/' %}<a class="privacy-link" href="{{ '/privacy/' | relative_url }}">Privacy &rarr;</a>{% endif %}
+  </span>
+</nav>

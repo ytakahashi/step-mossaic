@@ -1,0 +1,60 @@
+---
+layout: base
+---
+{% assign t = site.data[page.lang] %}
+
+<header class="hero wrap">
+  <canvas id="mosaic" width="128" height="128" style="width:128px;height:128px" aria-hidden="true"></canvas>
+  <h1>{{ t.hero_title }}</h1>
+  <p class="tagline">{{ t.hero_tagline }}</p>
+</header>
+
+<div class="divider"></div>
+
+<main>
+  <section class="section">
+    <div class="wrap">
+      <h2>{{ t.about_heading }}</h2>
+      <p>{{ t.about_body }}</p>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <section class="section">
+    <div class="wrap">
+      <h2>{{ t.screenshots_heading }}</h2>
+      <div class="screenshots">
+        <img class="screenshot" src="{{ '/assets/images/1_home.PNG' | relative_url }}" alt="Home screen showing today's steps, a monthly marimo, and a three-month heatmap" />
+        <img class="screenshot" src="{{ '/assets/images/2_shelf.PNG' | relative_url }}" alt="Shelf screen showing marimos created for previous months" />
+        <img class="screenshot" src="{{ '/assets/images/3_details.PNG' | relative_url }}" alt="Monthly detail screen showing a marimo and its step heatmap" />
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="features">
+        {% for feature in t.features %}
+        <div class="feature">
+          <div class="swatch" style="background: {{ feature.swatch }}"></div>
+          <h3>{{ feature.title }}</h3>
+          <p>{{ feature.body }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <section class="section support">
+    <div class="wrap">
+      <h2>{{ t.support_heading }}</h2>
+      <p>{{ t.support_body }}</p>
+      <p><a href="mailto:{{ t.support_email }}">Contact</a></p>
+    </div>
+  </section>
+</main>

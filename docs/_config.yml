@@ -1,0 +1,7 @@
+title: Step Mossaic
+description: >-
+  Step Mossaic visualizes your daily walking rhythm as a heatmap and a
+  monthly marimo.
+baseurl: "/step-mossaic"
+markdown: kramdown
+plugins: []

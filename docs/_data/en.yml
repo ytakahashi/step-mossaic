@@ -1,0 +1,84 @@
+hero_title: "Step Mossaic"
+hero_tagline: >-
+  Your daily steps, growing into something you can look back on.
+
+about_heading: "What it does"
+about_body: >-
+  Step Mossaic reads your step count from Apple Health and turns it into two
+  things: a calm heatmap of your daily rhythm, and a marimo that grows through
+  the month based on how you walked.
+
+features:
+  - title: "A heatmap of your rhythm"
+    swatch: "#3d7a42"
+    body: >-
+      Each day fills in based on your steps relative to the period you're
+      viewing — no fixed daily goals, and no comparisons to other people.
+  - title: "A marimo that grows with you"
+    swatch: "#5fa35a"
+    body: >-
+      A new marimo starts small on the first of each month. Its size, color,
+      and shape shift with how much — and how steadily — you walked that
+      month.
+  - title: "A shelf of every month"
+    swatch: "#a9d9a0"
+    body: >-
+      After the month ends, its marimo settles onto the shelf and becomes a
+      quiet record of how the month felt.
+
+screenshots_heading: "Screenshots"
+
+support_heading: "Support"
+support_body: >-
+  Have a question, or run into a problem? Reach out and we'll help.
+support_email: "yt01tc@gmail.com"
+
+privacy_heading: "Privacy Policy"
+privacy_updated: "Last updated: July 11, 2026"
+privacy_intro: >-
+  Step Mossaic is designed so your health data never leaves your device.
+  This section explains what the app accesses and how it's used.
+privacy_sections:
+  - heading: "Data the app accesses"
+    body: >-
+      Step count data, read from Apple Health (HealthKit), with your
+      explicit permission. The app requests read-only access — it never
+      writes to Health, and never requests any other Health data type
+      (heart rate, sleep, workouts, etc).
+  - heading: "How your data is used"
+    body: >-
+      Step counts are used only to render the heatmap and the monthly
+      marimo growth visualization inside the app. A local cache of daily
+      step totals is stored on your device and never leaves it — Step
+      Mossaic has no servers, performs no network requests, and includes no
+      analytics, advertising, or crash-reporting SDKs. This local cache is
+      never uploaded to iCloud or any other cloud service.
+  - heading: "Sharing with third parties"
+    body: >-
+      Step Mossaic does not share, sell, transmit, or otherwise disclose
+      your Health data to any third party, for any purpose, including
+      advertising or analytics. Step Mossaic does not include third-party
+      analytics, advertising, tracking, or data-collection SDKs.
+  - heading: "Your controls"
+    body: >-
+      You can grant or revoke the app's access to Health data at any time
+      from the Health app. Inside the app's Settings tab, Rebuild cache
+      deletes the app's local copy of your step history and re-reads it
+      from Health — this does not affect the data stored in Health itself.
+      Deleting the app removes its local cache entirely. This does not affect
+      the data stored in Health as well.
+  - heading: "Local cache retention"
+    body: >-
+      Cached daily step totals and monthly marimos remain on your device until
+      you rebuild the cache or delete the app. Revoking Health access prevents
+      future reads but does not automatically delete data already cached by
+      Step Mossaic.
+  - heading: "Changes to this policy"
+    body: >-
+      If this policy changes, the "Last updated" date above will be
+      revised. Any material change will be reflected here before it takes
+      effect.
+privacy_contact: >-
+  Questions about this policy can be sent to: yt01tc@gmail.com
+
+footer_text: "© 2026 ytakahashi"

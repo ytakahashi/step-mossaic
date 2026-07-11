@@ -1,0 +1,21 @@
+---
+layout: base
+---
+{% assign t = site.data[page.lang] %}
+
+<main>
+  <section class="section legal">
+    <div class="wrap">
+      <h1>{{ t.privacy_heading }}</h1>
+      <p class="updated">{{ t.privacy_updated }}</p>
+      <p class="intro">{{ t.privacy_intro }}</p>
+
+      {% for item in t.privacy_sections %}
+      <h3>{{ item.heading }}</h3>
+      <p>{{ item.body }}</p>
+      {% endfor %}
+
+      <p class="contact">{{ t.privacy_contact }}</p>
+    </div>
+  </section>
+</main>

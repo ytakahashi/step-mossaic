@@ -26,9 +26,16 @@ final class AppEnvironment {
   /// app drives one sync rather than one per view model.
   let syncModel: StepSyncModel
 
-  init(modelContainer: ModelContainer, calendar: Calendar = .current) {
+  init(
+    modelContainer: ModelContainer,
+    calendar: Calendar = .current,
+    // Overridable only so `#if DEBUG` UI-test scenarios can force a
+    // deterministic, HealthKit-free `StepSource`; production call sites always
+    // pass `nil` and get the real HealthKit-backed source.
+    source: (any StepSource)? = nil
+  ) {
     let context = ModelContext(modelContainer)
-    let source = HealthKitStepSource(calendar: calendar)
+    let source = source ?? HealthKitStepSource(calendar: calendar)
     let stepLogStore = SwiftDataStepLogStore(context: context, calendar: calendar)
     let marimoStore = SwiftDataMarimoStore(context: context)
     // Marimo tuning is assembled here, in the composition root, rather than left as

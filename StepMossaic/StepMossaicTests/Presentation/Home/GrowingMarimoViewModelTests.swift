@@ -84,3 +84,45 @@ func marimoReflectsBackfillingPhase() async {
   // Assert: the section mirrors the import progress in its own phase.
   #expect(marimo.phase == .backfilling(completedDays: 3, totalDays: 10))
 }
+
+@MainActor
+@Test("A sync failure with cached data keeps rendering this month's marimo")
+func marimoKeepsCacheWhenSyncFails() async throws {
+  // Arrange: seed the cache directly, as if a prior sync had already succeeded —
+  // no need to actually drive a failing sync to exercise this section's mapping.
+  let context = try InMemoryStore.makeContext()
+  let today = makeDate(2026, 6, 28)
+  let store = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
+  try store.upsert([DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)])
+  try store.saveAnchor(SyncAnchor(lastSyncedDate: today))
+  let coordinator = StepSyncCoordinator(
+    source: FakeStepSource(), stepLogStore: store,
+    marimoStore: SwiftDataMarimoStore(context: context), calendar: testCalendar, now: { today })
+  let marimo = GrowingMarimoViewModel(coordinator: coordinator)
+
+  // Act: the shared sync reports a failure even though the cache is intact.
+  await marimo.observe(.failed(hasCachedData: true))
+
+  // Assert: the section still renders this month's marimo rather than blanking out.
+  #expect(marimo.parameters?.totalSteps == 8_432)
+}
+
+@MainActor
+@Test("A sync failure with no cache shows the failed state, not empty")
+func marimoFailedStateWithoutCache() async throws {
+  // Arrange: an empty cache, so there is nothing to fall back to.
+  let context = try InMemoryStore.makeContext()
+  let today = makeDate(2026, 6, 28)
+  let store = SwiftDataStepLogStore(context: context, calendar: testCalendar, now: { today })
+  let coordinator = StepSyncCoordinator(
+    source: FakeStepSource(), stepLogStore: store,
+    marimoStore: SwiftDataMarimoStore(context: context), calendar: testCalendar, now: { today })
+  let marimo = GrowingMarimoViewModel(coordinator: coordinator)
+
+  // Act
+  await marimo.observe(.failed(hasCachedData: false))
+
+  // Assert: not the ordinary empty state, since sync genuinely failed rather than
+  // settling with no data.
+  #expect(marimo.phase == .failed)
+}

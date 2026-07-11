@@ -68,10 +68,19 @@ final class HeatmapViewModel {
     case ready(StepHeatmap)
     /// Sync finished but no step data exists at all.
     case empty
+    /// The shared sync failed and there is no cache to render — distinct from
+    /// `.empty`, which means sync succeeded and genuinely found nothing.
+    case failed
   }
 
   private(set) var phase: Phase = .loading
   private(set) var range: HeatmapRange = .threeMonths
+  /// Whether the most recently observed sync phase was `.failed`, so `reload()`
+  /// can tell "no content because sync failed" apart from the ordinary
+  /// "no content, sync is fine" — including on a reload triggered outside
+  /// `observe(_:)` (e.g. `selectRange(_:)`), which has no phase of its own to
+  /// check.
+  private var lastSyncFailed = false
 
   private let coordinator: StepSyncCoordinator
   private let stepLogStore: any StepLogStore
@@ -127,8 +136,9 @@ final class HeatmapViewModel {
   /// Driven by the owner (`StepSyncModel`) so the heatmap shows the import progress
   /// in its own area without itself triggering a sync:
   /// - `.loading` / `.backfilling` reflect straight through.
-  /// - `.ready` / `.empty` re-render from the cache; `reload()` then decides
-  ///   `.ready` vs `.empty` from coverage, staying consistent with the owner.
+  /// - `.ready` / `.empty` / `.failed` all re-render from the cache; `reload()`
+  ///   then decides `.ready` vs `.empty` vs `.failed`, so a `.failed` turn with a
+  ///   readable cache still renders it instead of blanking out.
   func observe(_ syncPhase: StepSyncModel.Phase) async {
     switch syncPhase {
     case .loading:
@@ -136,6 +146,10 @@ final class HeatmapViewModel {
     case .backfilling(let completed, let total):
       phase = .backfilling(completedDays: completed, totalDays: total)
     case .ready, .empty:
+      lastSyncFailed = false
+      await reload()
+    case .failed:
+      lastSyncFailed = true
       await reload()
     }
   }
@@ -151,10 +165,11 @@ final class HeatmapViewModel {
   func reload() async {
     do {
       let coverage = try coordinator.coverage()
-      // No first available day means no step data has ever existed: show the empty
-      // state rather than a grid of unavailable cells.
+      // No first available day means no cells to draw. Whether that reads as the
+      // ordinary empty state or a failed one depends on whether this turn's sync
+      // actually succeeded — `lastSyncFailed` is how `observe(_:)` communicates that.
       guard coverage.firstAvailableDay != nil else {
-        phase = .empty
+        phase = lastSyncFailed ? .failed : .empty
         return
       }
 
@@ -173,7 +188,9 @@ final class HeatmapViewModel {
         )
       )
     } catch {
-      phase = .empty
+      // A read failure is never the ordinary empty state, regardless of
+      // `lastSyncFailed`: the cache itself couldn't be read this time.
+      phase = .failed
     }
   }
 }

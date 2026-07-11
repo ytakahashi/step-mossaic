@@ -20,6 +20,86 @@ private func makeModel(
   return StepSyncModel(coordinator: coordinator)
 }
 
+/// Wires a sync model to fake, individually-throwable stores instead of a real
+/// SwiftData container, so failure-path tests can force a specific persistence
+/// call to fail deterministically (something an in-memory `ModelContainer`
+/// cannot be made to do).
+@MainActor
+private func makeFailableModel(
+  source: FakeStepSource,
+  stepLogStore: FakeStepLogStore,
+  marimoStore: FakeMarimoStore = FakeMarimoStore(),
+  today: Date,
+  reporter: @escaping DiagnosticsReporter = { _, _ in }
+) -> StepSyncModel {
+  let coordinator = StepSyncCoordinator(
+    source: source, stepLogStore: stepLogStore, marimoStore: marimoStore, calendar: testCalendar,
+    now: { today })
+  return StepSyncModel(coordinator: coordinator, reporter: reporter)
+}
+
+private struct TestError: Error {}
+
+/// Source that fails its first earliest-sample read, then lets a retry pause
+/// first at that read and later at the daily backfill read. Tests use the two
+/// suspension points to inspect the model's transient `.loading` and
+/// `.backfilling` phases rather than only its final settled state.
+private final class FailingThenPausingStepSource: StepSource, @unchecked Sendable {
+  var status: HealthAuthorizationStatus = .requested
+  private var shouldFail = true
+  private var earliestContinuation: CheckedContinuation<Date?, Never>?
+  private var dailyContinuation: CheckedContinuation<[DailySteps], Never>?
+  private var earliestWaiter: CheckedContinuation<Void, Never>?
+  private var dailyWaiter: CheckedContinuation<Void, Never>?
+
+  func authorizationStatus() -> HealthAuthorizationStatus { status }
+
+  func requestAuthorization() async throws {}
+
+  func earliestSampleDate() async throws -> Date? {
+    if shouldFail {
+      shouldFail = false
+      throw TestError()
+    }
+    earliestWaiter?.resume()
+    earliestWaiter = nil
+    return await withCheckedContinuation { earliestContinuation = $0 }
+  }
+
+  func dailySteps(in interval: DayInterval) async throws -> [DailySteps] {
+    dailyWaiter?.resume()
+    dailyWaiter = nil
+    return await withCheckedContinuation { dailyContinuation = $0 }
+  }
+
+  func observeTodayUpdates() -> AsyncStream<Void> {
+    AsyncStream { $0.finish() }
+  }
+
+  func waitForEarliestRequest() async {
+    guard earliestContinuation == nil else { return }
+    await withCheckedContinuation { earliestWaiter = $0 }
+  }
+
+  func releaseEarliestRequest() {
+    let continuation = earliestContinuation
+    earliestContinuation = nil
+    continuation?.resume(returning: makeDate(2026, 6, 1))
+  }
+
+  func waitForDailyRequest() async {
+    guard dailyContinuation == nil else { return }
+    await withCheckedContinuation { dailyWaiter = $0 }
+  }
+
+  func releaseDailyRequest() {
+    let continuation = dailyContinuation
+    dailyContinuation = nil
+    continuation?.resume(
+      returning: [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)])
+  }
+}
+
 /// Step source that pauses the earliest-sample query so tests can overlap two
 /// `start()` calls at the sync boundary instead of only running them sequentially.
 private final class PausingStepSource: StepSource, @unchecked Sendable {
@@ -559,4 +639,260 @@ func syncQueuesFollowUpWhenStartOverlaps() async throws {
   #expect(source.earliestRequestCount == 2)
   #expect(model.completedSyncCount == 2)
   #expect(model.phase == .ready)
+}
+
+@MainActor
+@Test("A source failure with an existing cache settles .failed but keeps the cache readable")
+func sourceFailureWithCacheSettlesFailedKeepingCache() async throws {
+  // Arrange: a cache already synced through June 20, so `sync()` takes the
+  // differential path, which fails once it reads the source.
+  let stepLogStore = FakeStepLogStore(
+    seedLogs: [DailySteps(day: makeDay(2026, 6, 10), steps: 5_000)],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 20))
+  )
+  let source = FakeStepSource()
+  source.errorToThrow = TestError()
+  let model = makeFailableModel(
+    source: source, stepLogStore: stepLogStore, today: makeDate(2026, 6, 28))
+
+  // Act
+  await model.start()
+
+  // Assert: the existing cache is still there, so the section can keep showing it.
+  #expect(model.phase == .failed(hasCachedData: true))
+  #expect(model.failureKind == .source)
+}
+
+@MainActor
+@Test("A source failure with no prior cache settles .failed with no cache to show")
+func sourceFailureWithoutCacheSettlesFailedWithoutCache() async throws {
+  // Arrange: no anchor yet, so `sync()` takes the backfill path, which fails on
+  // its very first source read.
+  let stepLogStore = FakeStepLogStore()
+  let source = FakeStepSource()
+  source.errorToThrow = TestError()
+  let model = makeFailableModel(
+    source: source, stepLogStore: stepLogStore, today: makeDate(2026, 6, 28))
+
+  // Act
+  await model.start()
+
+  // Assert
+  #expect(model.phase == .failed(hasCachedData: false))
+  #expect(model.failureKind == .source)
+}
+
+@MainActor
+@Test("A coverage read failure after a successful sync settles .failed, not .empty")
+func coverageFailureSettlesFailedNotEmpty() async throws {
+  // Arrange: the sync itself succeeds and writes real data, but the dedicated
+  // `earliestLoggedDay()` hook — reached only from `coverage()` — fails, so the
+  // sync/refresh steps this turn are unaffected.
+  let stepLogStore = FakeStepLogStore()
+  let source = FakeStepSource(earliest: makeDate(2026, 6, 1))
+  source.stepsToReturn = [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)]
+  stepLogStore.earliestLoggedDayErrorToThrow = TestError()
+  let model = makeFailableModel(
+    source: source, stepLogStore: stepLogStore, today: makeDate(2026, 6, 28))
+
+  // Act
+  await model.start()
+
+  // Assert: a coverage-read failure must not be mistaken for the ordinary
+  // "no data" empty state.
+  #expect(model.phase == .failed(hasCachedData: false))
+  #expect(model.failureKind == .persistence)
+}
+
+@MainActor
+@Test("A frozen-marimo refresh failure settles .failed while the daily cache is kept")
+func refreshFrozenMarimosFailureSettlesFailedKeepingCache() async throws {
+  // Arrange: history spanning April..June (today), so April is a completed past
+  // month `refreshFrozenMarimos()` actually attempts to freeze — reaching the
+  // marimo store, which is the one made to fail.
+  let stepLogStore = FakeStepLogStore()
+  let source = FakeStepSource(earliest: makeDate(2026, 4, 1))
+  source.stepsToReturn = [
+    DailySteps(day: makeDay(2026, 4, 5), steps: 5_000),
+    DailySteps(day: makeDay(2026, 6, 15), steps: 8_000),
+  ]
+  let marimoStore = FakeMarimoStore()
+  marimoStore.errorToThrow = TestError()
+  let model = makeFailableModel(
+    source: source, stepLogStore: stepLogStore, marimoStore: marimoStore,
+    today: makeDate(2026, 6, 15))
+
+  // Act
+  await model.start()
+
+  // Assert: the daily cache the sync just wrote is intact even though the turn
+  // as a whole settled `.failed`.
+  #expect(model.phase == .failed(hasCachedData: true))
+  #expect(model.failureKind == .persistence)
+  #expect(
+    try stepLogStore.logs(in: DayInterval(start: makeDay(2026, 4, 1), end: makeDay(2026, 6, 15)))
+      .count == 2)
+}
+
+@MainActor
+@Test("Retry succeeds from .failed and settles back on .ready")
+func retrySucceedsFromFailed() async throws {
+  // Arrange: the first sync fails outright.
+  let stepLogStore = FakeStepLogStore()
+  let source = FakeStepSource()
+  source.errorToThrow = TestError()
+  let model = makeFailableModel(
+    source: source, stepLogStore: stepLogStore, today: makeDate(2026, 6, 28))
+  await model.start()
+  #expect(model.phase == .failed(hasCachedData: false))
+
+  // Act: the underlying condition clears, then the user retries.
+  source.errorToThrow = nil
+  source.earliest = makeDate(2026, 6, 1)
+  source.stepsToReturn = [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)]
+  await model.retry()
+
+  // Assert
+  #expect(model.phase == .ready)
+  #expect(model.failureKind == nil)
+}
+
+@MainActor
+@Test("Retry clears the previous failure when backfill begins")
+func retryClearsFailureWhenBackfillBegins() async throws {
+  // Arrange
+  let source = FailingThenPausingStepSource()
+  let model = try makeModel(source: source, today: makeDate(2026, 6, 28))
+  await model.start()
+  #expect(model.phase == .failed(hasCachedData: false))
+  #expect(model.failureKind == .source)
+
+  // Act: release the earliest read so retry advances to backfill, then hold the
+  // daily read to inspect that transient phase before the run can settle.
+  let retry = Task { await model.retry() }
+  await source.waitForEarliestRequest()
+  source.releaseEarliestRequest()
+  await source.waitForDailyRequest()
+
+  // Assert
+  guard case .backfilling = model.phase else {
+    Issue.record("Expected retry to be backfilling")
+    source.releaseDailyRequest()
+    await retry.value
+    return
+  }
+  #expect(model.failureKind == nil)
+
+  source.releaseDailyRequest()
+  await retry.value
+}
+
+@MainActor
+@Test("Rebuild clears the previous failure when loading begins")
+func rebuildClearsFailureWhenLoadingBegins() async throws {
+  // Arrange
+  let source = FailingThenPausingStepSource()
+  let model = try makeModel(source: source, today: makeDate(2026, 6, 28))
+  await model.start()
+  #expect(model.phase == .failed(hasCachedData: false))
+  #expect(model.failureKind == .source)
+
+  // Act: rebuild resets the empty cache and then pauses at the first source read,
+  // leaving its `.loading` transition observable.
+  let rebuild = Task { await model.rebuild() }
+  await source.waitForEarliestRequest()
+
+  // Assert
+  #expect(model.phase == .loading)
+  #expect(model.failureKind == nil)
+
+  source.releaseEarliestRequest()
+  await source.waitForDailyRequest()
+  source.releaseDailyRequest()
+  await rebuild.value
+}
+
+@MainActor
+@Test("Overlapping retry requests collapse into one follow-up, sharing start()'s queue")
+func retryRequestsCoalesceThroughSharedQueue() async throws {
+  // Arrange: mirrors `syncQueuesFollowUpWhenStartOverlaps`, but through
+  // `retry()`, to confirm it drives the same serialized request queue as
+  // `start()` rather than a queue of its own.
+  let source = PausingStepSource(
+    earliestResults: [nil, makeDate(2026, 6, 1)],
+    stepsToReturn: [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)]
+  )
+  let model = try makeModel(source: source, today: makeDate(2026, 6, 28))
+
+  // Act
+  let firstRetry = Task { await model.retry() }
+  await source.waitForEarliestRequest()
+
+  let overlappingRetry = Task { await model.retry() }
+  await overlappingRetry.value
+  source.releaseEarliestRequest()
+
+  await source.waitForEarliestRequest()
+  source.releaseEarliestRequest()
+  await firstRetry.value
+
+  // Assert: the overlapping call is collapsed into one retry after the current run.
+  #expect(source.earliestRequestCount == 2)
+  #expect(model.completedSyncCount == 2)
+  #expect(model.phase == .ready)
+}
+
+@MainActor
+@Test("A rebuild reset failure settles .failed without continuing into a sync")
+func rebuildResetFailureSkipsSync() async throws {
+  // Arrange: a working cache, so a sync that incorrectly ran after the failed
+  // reset would be observable as `.ready` instead of the expected `.failed`.
+  let stepLogStore = FakeStepLogStore()
+  let source = FakeStepSource(earliest: makeDate(2026, 6, 1))
+  source.stepsToReturn = [DailySteps(day: makeDay(2026, 6, 27), steps: 8_432)]
+  let model = makeFailableModel(
+    source: source, stepLogStore: stepLogStore, today: makeDate(2026, 6, 28))
+  await model.start()
+  #expect(model.phase == .ready)
+
+  // The reset itself now fails; every other store call still succeeds.
+  stepLogStore.resetErrorToThrow = TestError()
+
+  // Act
+  await model.rebuild()
+
+  // Assert: settles `.failed` rather than a `.ready` that would mean a sync ran
+  // over a possibly-partial wipe. `hasCachedData` is `true` because this fake's
+  // `reset()` throws before mutating its storage, leaving the prior cache
+  // intact and still readable by the best-effort coverage re-check.
+  #expect(model.phase == .failed(hasCachedData: true))
+  #expect(model.failureKind == .persistence)
+}
+
+@MainActor
+@Test("Diagnostics reports only the operation and coarse failure kind, never the raw error")
+func diagnosticsReportsOperationAndKindOnly() async throws {
+  // Arrange: a source failure with an existing cache, so both a `.sync`
+  // failure and (if reached) later successes could be reported.
+  let stepLogStore = FakeStepLogStore(
+    seedLogs: [DailySteps(day: makeDay(2026, 6, 10), steps: 5_000)],
+    anchor: SyncAnchor(lastSyncedDate: makeDate(2026, 6, 20))
+  )
+  let source = FakeStepSource()
+  source.errorToThrow = TestError()
+  var reported: [(DiagnosticOperation, DiagnosticOutcome)] = []
+  let model = makeFailableModel(
+    source: source, stepLogStore: stepLogStore, today: makeDate(2026, 6, 28),
+    reporter: { operation, outcome in reported.append((operation, outcome)) }
+  )
+
+  // Act
+  await model.start()
+
+  // Assert: exactly one event, naming the failed operation and its coarse
+  // classification — the closure's signature makes a raw `Error` or its
+  // description structurally unreachable here.
+  #expect(reported.count == 1)
+  #expect(reported.first?.0 == .sync)
+  #expect(reported.first?.1 == .failure(.source))
 }

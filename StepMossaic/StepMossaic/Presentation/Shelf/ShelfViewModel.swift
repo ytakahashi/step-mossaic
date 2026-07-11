@@ -22,9 +22,16 @@ final class ShelfViewModel {
     /// Sync settled but no month has been frozen yet (e.g. only the current,
     /// still-growing month has data).
     case empty
+    /// The shared sync failed and there is no cache to render — distinct from
+    /// `.empty`, which means sync succeeded and genuinely found nothing frozen.
+    case failed
   }
 
   private(set) var phase: Phase = .loading
+  /// Whether the most recently observed sync phase was `.failed`, so `reload()`
+  /// can tell "no content because sync failed" apart from the ordinary
+  /// "no content, sync is fine".
+  private var lastSyncFailed = false
 
   private let marimoStore: any MarimoStore
   private let stepLogStore: any StepLogStore
@@ -57,12 +64,18 @@ final class ShelfViewModel {
   /// - `.loading` / `.backfilling` both show the redacted grid: the shelf has no
   ///   per-section progress, so an in-flight backfill reads the same as a first
   ///   load.
-  /// - `.ready` / `.empty` reload the frozen snapshots from the store.
+  /// - `.ready` / `.empty` / `.failed` all reload the frozen snapshots from the
+  ///   store; `reload()` then decides `.ready` vs `.empty` vs `.failed`, so a
+  ///   `.failed` turn with frozen marimos still on hand still renders them.
   func observe(_ syncPhase: StepSyncModel.Phase) async {
     switch syncPhase {
     case .loading, .backfilling:
       phase = .loading
     case .ready, .empty:
+      lastSyncFailed = false
+      reload()
+    case .failed:
+      lastSyncFailed = true
       reload()
     }
   }
@@ -71,15 +84,17 @@ final class ShelfViewModel {
   ///
   /// `.ready` vs `.empty` is decided by the snapshots, not the sync phase: a
   /// settled-with-data cache whose only month is the current growing one has no
-  /// frozen monument yet, so the shelf is still empty. A read failure also surfaces
-  /// as `.empty`, like the other cache-backed sections.
+  /// frozen monument yet, so the shelf is still empty. Whether "no monuments"
+  /// reads as that ordinary empty state or a failed one depends on whether this
+  /// turn's sync actually succeeded — `lastSyncFailed` is how `observe(_:)`
+  /// communicates that. A local read failure is always `.failed`.
   func reload() {
     do {
       // `allFrozen()` is chronological; reverse so the newest month leads the shelf.
       let marimos = Array(try marimoStore.allFrozen().reversed())
-      phase = marimos.isEmpty ? .empty : .ready(marimos)
+      phase = marimos.isEmpty ? (lastSyncFailed ? .failed : .empty) : .ready(marimos)
     } catch {
-      phase = .empty
+      phase = .failed
     }
   }
 

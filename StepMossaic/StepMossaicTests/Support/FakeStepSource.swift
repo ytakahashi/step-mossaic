@@ -14,6 +14,9 @@ final class FakeStepSource: StepSource, @unchecked Sendable {
   /// updates. A finite count keeps `observeLiveUpdates()` deterministic in tests:
   /// the loop returns once these ticks have been drained and their syncs ran.
   var liveTickCount = 0
+  /// When set, `earliestSampleDate()` and `dailySteps(in:)` throw this instead
+  /// of returning, so tests can force a `StepSyncCoordinator.Failure.source`.
+  var errorToThrow: Error?
   private(set) var requestAuthorizationCount = 0
 
   init(
@@ -36,9 +39,15 @@ final class FakeStepSource: StepSource, @unchecked Sendable {
     status = .requested
   }
 
-  func earliestSampleDate() async throws -> Date? { earliest }
+  func earliestSampleDate() async throws -> Date? {
+    if let errorToThrow { throw errorToThrow }
+    return earliest
+  }
 
-  func dailySteps(in interval: DayInterval) async throws -> [DailySteps] { stepsToReturn }
+  func dailySteps(in interval: DayInterval) async throws -> [DailySteps] {
+    if let errorToThrow { throw errorToThrow }
+    return stepsToReturn
+  }
 
   func observeTodayUpdates() -> AsyncStream<Void> {
     let count = liveTickCount

@@ -9,9 +9,11 @@ import SwiftUI
 /// small month still reads clearly without wasted side margin.
 struct GrowingMarimoView: View {
   @State private var model: GrowingMarimoViewModel
+  let onRetry: () -> Void
 
-  init(model: GrowingMarimoViewModel) {
+  init(model: GrowingMarimoViewModel, onRetry: @escaping () -> Void) {
     _model = State(initialValue: model)
+    self.onRetry = onRetry
   }
 
   var body: some View {
@@ -35,6 +37,8 @@ struct GrowingMarimoView: View {
         .animation(.easeInOut(duration: 0.4), value: parameters)
     case .empty:
       emptyState
+    case .failed:
+      failedState
     }
   }
 
@@ -54,5 +58,20 @@ struct GrowingMarimoView: View {
       .multilineTextAlignment(.center)
       .frame(maxWidth: .infinity)
       .padding()
+  }
+
+  /// Shown when the sync failed and there is no cached month to draw instead.
+  private var failedState: some View {
+    VStack(spacing: 8) {
+      Text("Step data couldn't be loaded.")
+        .font(.subheadline)
+      Text("Your Health data is not affected.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Button("Try Again", action: onRetry)
+    }
+    .multilineTextAlignment(.center)
+    .frame(maxWidth: .infinity)
+    .padding()
   }
 }

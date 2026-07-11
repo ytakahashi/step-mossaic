@@ -12,6 +12,20 @@ import Foundation
 /// and coverage construction.
 @MainActor
 public final class StepSyncCoordinator {
+  /// Coarse classification of a `sync()` failure by which collaborator threw,
+  /// so a caller can distinguish "HealthKit read failed" from "the local cache
+  /// failed" without depending on either's concrete error type.
+  ///
+  /// Deliberately carries no underlying `Error`: keeping the case the only
+  /// payload means there is nothing here a caller could accidentally log at a
+  /// privacy-sensitive detail level.
+  public enum Failure: Error, Equatable {
+    /// A `StepSource` (HealthKit) call failed.
+    case source
+    /// A `StepLogStore` call failed.
+    case persistence
+  }
+
   private let source: any StepSource
   private let stepLogStore: any StepLogStore
   /// Persists the frozen monthly marimos the shelf renders. Non-`Sendable` and
@@ -91,7 +105,9 @@ public final class StepSyncCoordinator {
     let syncDate = now()
     let syncDay = Day(containing: syncDate, calendar: calendar)
 
-    if let anchor = try stepLogStore.anchorState() {
+    let anchor = try callPersistence { try stepLogStore.anchorState() }
+
+    if let anchor {
       try await differentialSync(
         from: anchor, syncDate: syncDate, syncDay: syncDay, onProgress: onProgress)
     } else {
@@ -224,7 +240,7 @@ public final class StepSyncCoordinator {
     syncDay: Day,
     onProgress: (SyncProgress) -> Void
   ) async throws {
-    guard let earliest = try await source.earliestSampleDate() else {
+    guard let earliest = try await callSource({ try await source.earliestSampleDate() }) else {
       // No samples yet: leave the anchor unset so a later launch retries the full
       // backfill once data exists (e.g. the user starts accruing steps, or a
       // device restore imports history) instead of locking into differential sync
@@ -241,13 +257,13 @@ public final class StepSyncCoordinator {
     onProgress(.backfilling(completedDays: completedDays, totalDays: totalDays))
 
     for chunk in fullInterval.chunked(maxDays: chunkSizeInDays, calendar: calendar) {
-      let daily = try await source.dailySteps(in: chunk)
-      try stepLogStore.upsert(daily)
+      let daily = try await callSource({ try await source.dailySteps(in: chunk) })
+      try callPersistence { try stepLogStore.upsert(daily) }
       completedDays += chunk.days(calendar: calendar).count
       onProgress(.backfilling(completedDays: completedDays, totalDays: totalDays))
     }
 
-    try stepLogStore.saveAnchor(SyncAnchor(lastSyncedDate: syncDate))
+    try callPersistence { try stepLogStore.saveAnchor(SyncAnchor(lastSyncedDate: syncDate)) }
   }
 
   private func differentialSync(
@@ -269,9 +285,30 @@ public final class StepSyncCoordinator {
     // Clamp the start to today so a clock that moved backward can't form an
     // invalid (start > end) interval; re-reading the last synced day is harmless.
     let interval = DayInterval(start: min(lastSynced, syncDay), end: syncDay)
-    let daily = try await source.dailySteps(in: interval)
-    try stepLogStore.upsert(daily)
+    let daily = try await callSource({ try await source.dailySteps(in: interval) })
+    try callPersistence { try stepLogStore.upsert(daily) }
 
-    try stepLogStore.saveAnchor(SyncAnchor(lastSyncedDate: syncDate))
+    try callPersistence { try stepLogStore.saveAnchor(SyncAnchor(lastSyncedDate: syncDate)) }
+  }
+
+  /// Runs a `StepSource` call and reclassifies any failure as `Failure.source`,
+  /// so `StepSyncModel` can distinguish it from a persistence failure without
+  /// knowing `StepSource`'s concrete error type.
+  private func callSource<T>(_ work: () async throws -> T) async throws -> T {
+    do {
+      return try await work()
+    } catch {
+      throw Failure.source
+    }
+  }
+
+  /// Runs a `StepLogStore` call and reclassifies any failure as
+  /// `Failure.persistence`, for the same reason as `callSource(_:)`.
+  private func callPersistence<T>(_ work: () throws -> T) throws -> T {
+    do {
+      return try work()
+    } catch {
+      throw Failure.persistence
+    }
   }
 }

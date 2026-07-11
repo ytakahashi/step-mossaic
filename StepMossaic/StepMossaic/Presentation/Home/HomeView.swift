@@ -25,8 +25,11 @@ struct HomeView: View {
       // screen — stats, marimo, heatmap — fits without scrolling.
       VStack(alignment: .leading, spacing: 16) {
         header
-        GrowingMarimoView(model: marimoModel)
-        StepHeatmapView(model: heatmapModel)
+        if isSyncFailing, hasCachedHomeContent {
+          SyncFailureBanner(onRetry: retrySync)
+        }
+        GrowingMarimoView(model: marimoModel, onRetry: retrySync)
+        StepHeatmapView(model: heatmapModel, onRetry: retrySync)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .padding()
@@ -86,6 +89,27 @@ struct HomeView: View {
         .font(.subheadline)
         .foregroundStyle(.secondary)
     }
+  }
+
+  /// Whether the shared sync failed this turn, read directly from `syncModel`
+  /// rather than through either section's own phase — a section's `phase` stays
+  /// `.ready` whenever its cached content survives a failed sync, so it alone
+  /// can't tell the view whether to show the retry banner.
+  private var isSyncFailing: Bool {
+    if case .failed = syncModel.phase { true } else { false }
+  }
+
+  /// Whether either cache-backed Home section still has content worth keeping
+  /// visible. The shared failure banner appears once for the whole screen in
+  /// that case; a section without cached content renders its own failed state.
+  private var hasCachedHomeContent: Bool {
+    if case .ready = marimoModel.phase { return true }
+    if case .ready = heatmapModel.phase { return true }
+    return false
+  }
+
+  private func retrySync() {
+    Task { await syncModel.retry() }
   }
 
   private var authorizationPrompt: some View {

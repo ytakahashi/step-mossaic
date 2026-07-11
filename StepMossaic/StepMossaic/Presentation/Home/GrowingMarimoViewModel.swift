@@ -22,9 +22,16 @@ final class GrowingMarimoViewModel {
     case ready(MarimoParameters)
     /// Sync settled but no step data exists for this month yet.
     case empty
+    /// The shared sync failed and there is no cache to render — distinct from
+    /// `.empty`, which means sync succeeded and genuinely found nothing.
+    case failed
   }
 
   private(set) var phase: Phase = .loading
+  /// Whether the most recently observed sync phase was `.failed`, so `reload()`
+  /// can tell "no content because sync failed" apart from the ordinary
+  /// "no content, sync is fine".
+  private var lastSyncFailed = false
 
   private let coordinator: StepSyncCoordinator
 
@@ -43,34 +50,39 @@ final class GrowingMarimoViewModel {
   /// Driven by the owner (`StepSyncModel`) so the marimo shows the import progress
   /// in its own area without itself triggering a sync:
   /// - `.loading` / `.backfilling` reflect straight through.
-  /// - `.ready` / `.empty` recompute this month's marimo from the cache.
-  /// - `.failed` currently reads the same as `.loading`; a dedicated failed
-  ///   presentation that keeps showing the last-good marimo lands separately.
+  /// - `.ready` / `.empty` / `.failed` all recompute this month's marimo from the
+  ///   cache; `reload()` then decides `.ready` vs `.empty` vs `.failed`, so a
+  ///   `.failed` turn with a readable cache still renders it.
   func observe(_ syncPhase: StepSyncModel.Phase) async {
     switch syncPhase {
-    case .loading, .failed:
+    case .loading:
       phase = .loading
     case .backfilling(let completed, let total):
       phase = .backfilling(completedDays: completed, totalDays: total)
     case .ready, .empty:
+      lastSyncFailed = false
+      reload()
+    case .failed:
+      lastSyncFailed = true
       reload()
     }
   }
 
   /// Recomputes this month's marimo from the cached logs (no sync).
   ///
-  /// A failure or a month with no available day both surface as `.empty`: like the
-  /// heatmap, read-only HealthKit access can't be confirmed, so "no data" is shown
-  /// rather than an error.
+  /// Whether "no marimo to draw" reads as the ordinary empty state or a failed
+  /// one depends on whether this turn's sync actually succeeded —
+  /// `lastSyncFailed` is how `observe(_:)` communicates that. A local read
+  /// failure is always `.failed`, regardless of `lastSyncFailed`.
   func reload() {
     do {
       if let parameters = try coordinator.growingMarimo() {
         phase = .ready(parameters)
       } else {
-        phase = .empty
+        phase = lastSyncFailed ? .failed : .empty
       }
     } catch {
-      phase = .empty
+      phase = .failed
     }
   }
 }

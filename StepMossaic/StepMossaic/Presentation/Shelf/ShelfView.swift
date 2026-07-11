@@ -56,22 +56,29 @@ struct ShelfView: View {
       grid(marimos)
     case .empty:
       emptyState
+    case .failed:
+      failedState
     }
   }
 
   private func grid(_ marimos: [FrozenMarimo]) -> some View {
     ScrollView {
-      // `LazyVGrid` builds only the cells near the viewport, so each marimo's
-      // Canvas draw happens on demand rather than all at once — the whole shelf can
-      // scroll however far back without rendering off-screen months.
-      LazyVGrid(columns: columns, spacing: 20) {
-        ForEach(marimos, id: \.yearMonth.storageKey) { marimo in
-          Button {
-            selection = MonthSelection(marimo: marimo)
-          } label: {
-            ShelfMarimoThumbnail(marimo: marimo)
+      VStack(spacing: 12) {
+        if isSyncFailing {
+          SyncFailureBanner(onRetry: retrySync)
+        }
+        // `LazyVGrid` builds only the cells near the viewport, so each marimo's
+        // Canvas draw happens on demand rather than all at once — the whole shelf
+        // can scroll however far back without rendering off-screen months.
+        LazyVGrid(columns: columns, spacing: 20) {
+          ForEach(marimos, id: \.yearMonth.storageKey) { marimo in
+            Button {
+              selection = MonthSelection(marimo: marimo)
+            } label: {
+              ShelfMarimoThumbnail(marimo: marimo)
+            }
+            .buttonStyle(.plain)
           }
-          .buttonStyle(.plain)
         }
       }
       .padding()
@@ -107,6 +114,33 @@ struct ShelfView: View {
       .multilineTextAlignment(.center)
       .padding()
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  /// Shown when the sync failed and there are no frozen months to draw instead.
+  private var failedState: some View {
+    VStack(spacing: 8) {
+      Text("Step data couldn't be loaded.")
+        .font(.subheadline)
+      Text("Your Health data is not affected.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Button("Try Again", action: retrySync)
+    }
+    .multilineTextAlignment(.center)
+    .padding()
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  /// Whether the shared sync failed this turn, read directly from `syncModel`
+  /// rather than through `model.phase` — the shelf's own phase stays `.ready`
+  /// whenever its frozen marimos survive a failed sync, so it alone can't tell
+  /// the view whether to show the retry banner.
+  private var isSyncFailing: Bool {
+    if case .failed = syncModel.phase { true } else { false }
+  }
+
+  private func retrySync() {
+    Task { await syncModel.retry() }
   }
 }
 

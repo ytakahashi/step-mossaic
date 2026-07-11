@@ -90,6 +90,20 @@ struct SettingsView: View {
 
   @ViewBuilder
   private var rebuildContent: some View {
+    // Shown above Rebuild, not in its place: a failed sync has a lighter,
+    // non-destructive recovery than wiping and re-downloading the whole cache,
+    // so it's offered first.
+    if case .failed = syncModel.phase {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Couldn't update your step data.")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+        Button("Try Again") {
+          Task { await syncModel.retry() }
+        }
+      }
+    }
+
     Button("Rebuild cache", role: .destructive) {
       isConfirmingRebuild = true
     }

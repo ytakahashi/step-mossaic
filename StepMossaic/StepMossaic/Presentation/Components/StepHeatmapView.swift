@@ -5,9 +5,11 @@ import SwiftUI
 /// average step figures, a range selector, and backfill/empty states.
 struct StepHeatmapView: View {
   @State private var model: HeatmapViewModel
+  let onRetry: () -> Void
 
-  init(model: HeatmapViewModel) {
+  init(model: HeatmapViewModel, onRetry: @escaping () -> Void) {
     _model = State(initialValue: model)
+    self.onRetry = onRetry
   }
 
   var body: some View {
@@ -50,6 +52,8 @@ struct StepHeatmapView: View {
       footer(heatmap)
     case .empty:
       emptyState
+    case .failed:
+      failedState
     }
   }
 
@@ -112,6 +116,19 @@ struct StepHeatmapView: View {
       .font(.subheadline)
       .foregroundStyle(.secondary)
       .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+  }
+
+  /// Shown when the sync failed and there is no cached range to draw instead.
+  private var failedState: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Step data couldn't be loaded.")
+        .font(.subheadline)
+      Text("Your Health data is not affected.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Button("Try Again", action: onRetry)
+    }
+    .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
   }
 
   private func averageText(_ heatmap: StepHeatmap) -> String {

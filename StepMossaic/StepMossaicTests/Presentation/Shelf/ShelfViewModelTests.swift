@@ -118,6 +118,34 @@ func shelfRefreshesOnResync() async throws {
 }
 
 @MainActor
+@Test("A sync failure with frozen months keeps rendering the shelf")
+func shelfKeepsCacheWhenSyncFails() async throws {
+  // Arrange: settle once with a frozen month, as if a prior sync had succeeded.
+  let harness = try makeHarness(frozen: [makeMarimo(2026, 3)])
+  await harness.model.observe(.ready)
+
+  // Act: the shared sync reports a failure even though the frozen months are intact.
+  await harness.model.observe(.failed(hasCachedData: true))
+
+  // Assert: the shelf still renders the frozen month rather than blanking out.
+  #expect(harness.model.marimos.map(\.yearMonth) == [YearMonth(year: 2026, month: 3)])
+}
+
+@MainActor
+@Test("A sync failure with no frozen months shows the failed state, not empty")
+func shelfFailedStateWithoutCache() async throws {
+  // Arrange: no frozen months, so there is nothing to fall back to.
+  let model = try makeHarness().model
+
+  // Act
+  await model.observe(.failed(hasCachedData: false))
+
+  // Assert: not the ordinary empty state, since sync genuinely failed rather than
+  // settling with no frozen months.
+  #expect(model.phase == .failed)
+}
+
+@MainActor
 @Test("Month detail aggregates the tapped month from the cache")
 func monthDetailAggregatesMonth() throws {
   // Arrange: April measured (two days), synced through June, with April frozen.

@@ -30,20 +30,33 @@ struct ShelfMarimoThumbnail: View {
   }
 }
 
-#Preview("Shelf thumbnails") {
-  let columns = [GridItem(.adaptive(minimum: 96), spacing: 16)]
-  let samples: [FrozenMarimo] = (0..<6).map { index in
-    FrozenMarimo(
+/// Broken out of the `#Preview` body so the compiler type-checks the
+/// arithmetic-heavy sample construction separately from the view hierarchy —
+/// combined into one expression, it timed out ("unable to type-check this
+/// expression in reasonable time").
+private func shelfThumbnailPreviewSamples() -> [FrozenMarimo] {
+  (0..<6).map { index -> FrozenMarimo in
+    let sizeUnit: Double = 0.3 + Double(index) * 0.12
+    let colorLevel: Double = 1 + Double(index % 4) * 0.7
+    let bumpiness: Double = 0.15 + Double(index % 3) * 0.2
+    let seed = UInt64(202_600 + 6 - index)
+    let totalSteps = 120_000 + index * 30_000
+    return FrozenMarimo(
       yearMonth: YearMonth(year: 2026, month: 6 - index),
-      sizeUnit: 0.3 + Double(index) * 0.12,
-      colorLevel: 1 + Double(index % 4) * 0.7,
-      bumpiness: 0.15 + Double(index % 3) * 0.2,
-      seed: UInt64(202_600 + 6 - index),
-      totalSteps: 120_000 + index * 30_000,
+      sizeUnit: sizeUnit,
+      colorLevel: colorLevel,
+      bumpiness: bumpiness,
+      seed: seed,
+      totalSteps: totalSteps,
       frozenAt: .now,
       isLocked: true
     )
   }
+}
+
+#Preview("Shelf thumbnails") {
+  let columns = [GridItem(.adaptive(minimum: 96), spacing: 16)]
+  let samples = shelfThumbnailPreviewSamples()
 
   return ScrollView {
     LazyVGrid(columns: columns, spacing: 20) {

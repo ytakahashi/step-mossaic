@@ -123,6 +123,7 @@ struct SettingsView: View {
       isConfirmingRebuild = true
     }
     .disabled(!canRebuild)
+    .accessibilityIdentifier("settings.rebuildCacheButton")
 
     // Only `.backfilling` gets the progress treatment, matching the Home
     // heatmap: `.loading` is a quick differential re-check with nothing

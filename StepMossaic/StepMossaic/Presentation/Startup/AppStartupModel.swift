@@ -17,6 +17,12 @@ final class AppStartupModel {
   /// real, broken on-disk store — see `AppModelContainer.make`.
   typealias ModelContainerFactory = () async throws -> ModelContainer
 
+  /// Builds the app's `AppEnvironment` from a resolved container. Injected so
+  /// `#if DEBUG` UI-test scenarios can wire a fake `StepSource` into
+  /// `AppEnvironment` without this model knowing scenarios exist; production
+  /// callers rely on the default.
+  typealias EnvironmentFactory = (ModelContainer) -> AppEnvironment
+
   /// The outcome of resolving the container.
   ///
   /// Not `Equatable`: `.ready` holds `AppEnvironment` (a class with no
@@ -34,6 +40,7 @@ final class AppStartupModel {
   private(set) var state: State = .loading
 
   private let makeContainer: ModelContainerFactory
+  private let makeEnvironment: EnvironmentFactory
   private let reporter: DiagnosticsReporter
   /// Guards the synchronous store-opening boundary across `Task.yield()`, so
   /// overlapping start/retry requests cannot create two containers for the same
@@ -42,9 +49,11 @@ final class AppStartupModel {
 
   init(
     makeContainer: @escaping ModelContainerFactory,
+    makeEnvironment: @escaping EnvironmentFactory = { AppEnvironment(modelContainer: $0) },
     reporter: @escaping DiagnosticsReporter = { _, _ in }
   ) {
     self.makeContainer = makeContainer
+    self.makeEnvironment = makeEnvironment
     self.reporter = reporter
   }
 
@@ -80,11 +89,32 @@ final class AppStartupModel {
 
     do {
       let container = try await makeContainer()
-      state = .ready(AppEnvironment(modelContainer: container), container)
+      state = .ready(makeEnvironment(container), container)
       reporter(.startup, .success)
     } catch {
       state = .persistenceFailure
       reporter(.startup, .failure(.persistence))
     }
+  }
+}
+
+extension AppStartupModel {
+  /// The single call site `StepMossaicApp` uses to build its startup model.
+  /// In a `#if DEBUG` build launched with a `UITestScenario` in the launch
+  /// environment, this returns a scenario-driven model wired to an in-memory
+  /// container and a fake `StepSource` instead of the real one, so UI tests
+  /// never depend on HealthKit or the on-disk cache. Otherwise (and always in
+  /// Release), it opens the real on-disk `ModelContainer`, wires the real
+  /// `AppEnvironment`, and reports through `DiagnosticsLogger`.
+  static func makeDefault() -> AppStartupModel {
+    #if DEBUG
+      if let scenario = UITestScenario.current {
+        return scenario.makeStartupModel()
+      }
+    #endif
+    return AppStartupModel(
+      makeContainer: { try AppModelContainer.make() },
+      reporter: DiagnosticsLogger.report
+    )
   }
 }

@@ -121,6 +121,7 @@ struct HomeView: View {
         Task { await model.requestAccess() }
       }
       .buttonStyle(.borderedProminent)
+      .accessibilityIdentifier("home.allowHealthAccessButton")
     }
   }
 }

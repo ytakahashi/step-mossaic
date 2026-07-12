@@ -4,10 +4,7 @@ import SwiftUI
 struct StepMossaicApp: App {
   /// Owns the container-resolution lifecycle for the app's lifetime; see
   /// `AppRootView` for how each `AppStartupModel.State` renders.
-  @State private var startup = AppStartupModel(
-    makeContainer: { try AppModelContainer.make() },
-    reporter: DiagnosticsLogger.report
-  )
+  @State private var startup = AppStartupModel.makeDefault()
 
   var body: some Scene {
     WindowGroup {

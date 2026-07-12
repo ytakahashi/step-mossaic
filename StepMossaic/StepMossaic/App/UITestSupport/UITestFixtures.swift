@@ -3,10 +3,10 @@
   import StepMossaicDomain
   import SwiftData
 
-  /// Seeds an in-memory `ModelContainer` with a full prior month plus the
+  /// Seeds an in-memory `ModelContainer` with two full prior months plus the
   /// current month's step history, so the `withData` UI-test scenario renders
-  /// real content (a frozen Shelf marimo, a growing Home marimo, a populated
-  /// heatmap) without depending on HealthKit.
+  /// real content (multiple frozen Shelf marimos, a growing Home marimo, a
+  /// populated heatmap) without depending on HealthKit.
   ///
   /// Inserted directly through a `ModelContext` on the same container
   /// `AppEnvironment` will later open its own context on — SwiftData reads
@@ -20,11 +20,15 @@
       let today = Day(containing: now, calendar: calendar)
       let thisMonth = YearMonth(date: now, calendar: calendar)
       let lastMonth = thisMonth.previous()
+      let twoMonthsAgo = lastMonth.previous()
 
-      // A full prior month, so `refreshFrozenMarimos()` has a completed month to
-      // freeze onto the Shelf.
-      for day in lastMonth.interval(calendar: calendar).days(calendar: calendar) {
-        context.insert(record(for: day))
+      // Two full prior months, so `refreshFrozenMarimos()` freezes more than one
+      // month onto the Shelf — enough to test a multi-tile grid, not just that a
+      // single tile exists.
+      for month in [twoMonthsAgo, lastMonth] {
+        for day in month.interval(calendar: calendar).days(calendar: calendar) {
+          context.insert(record(for: day))
+        }
       }
 
       // The current month through today, so the Home growing marimo and heatmap

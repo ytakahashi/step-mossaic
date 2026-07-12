@@ -45,6 +45,7 @@ struct MonthDetailSheet: View {
     }
     .presentationDetents([.medium, .large])
     .presentationDragIndicator(.visible)
+    .accessibilityIdentifier("shelf.monthDetail.sheet")
   }
 
   private func stats(_ detail: MonthDetail) -> some View {

@@ -25,11 +25,18 @@ struct HomeView: View {
       // screen — stats, marimo, heatmap — fits without scrolling.
       VStack(alignment: .leading, spacing: 16) {
         header
-        if isSyncFailing, hasCachedHomeContent {
-          SyncFailureBanner(onRetry: retrySync)
+        // Health authorization gates these cache-backed sections entirely: syncing
+        // before access is granted is doomed to fail, and surfacing that as a
+        // "Step data couldn't be loaded" error is misleading — there's nothing
+        // broken, the user just hasn't granted access yet. See `authorizationPrompt`
+        // for the state shown instead.
+        if model.phase == .ready {
+          if isSyncFailing, hasCachedHomeContent {
+            SyncFailureBanner(onRetry: retrySync)
+          }
+          GrowingMarimoView(model: marimoModel, onRetry: retrySync)
+          StepHeatmapView(model: heatmapModel, onRetry: retrySync)
         }
-        GrowingMarimoView(model: marimoModel, onRetry: retrySync)
-        StepHeatmapView(model: heatmapModel, onRetry: retrySync)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .padding()
@@ -42,25 +49,23 @@ struct HomeView: View {
     .task(id: model.phase) { await model.activate() }
     // Own the single cache sync here and fan its shared phase out to each
     // cache-backed section, so the sections render one sync rather than each
-    // racing its own backfill.
-    .task { await syncModel.start() }
+    // racing its own backfill. Gated on Health access being resolved: syncing
+    // beforehand always fails (no permission to read yet), which would surface
+    // as a misleading "Step data couldn't be loaded" error, so the sync — and
+    // the sections that mirror its phase — simply don't run until `.ready`.
+    .task(id: model.phase) {
+      guard model.phase == .ready else { return }
+      await syncModel.start()
+    }
     // Keep the cache fresh while foregrounded after Health access is resolved:
     // live step ticks run a differential sync, so "This month" and the marimo
-    // grow mid-session rather than only on launch/foreground re-entry. Keying by
-    // phase recreates the Health observer after the user grants access.
+    // grow mid-session rather than only on launch/foreground re-entry.
     .task(id: model.phase) {
       guard model.phase == .ready else { return }
       await syncModel.observeLiveUpdates()
     }
     .task(id: syncModel.observationKey) { await heatmapModel.observe(syncModel.phase) }
     .task(id: syncModel.observationKey) { await marimoModel.observe(syncModel.phase) }
-    // The sync above runs before access is granted. When the user grants it from
-    // the prompt, re-sync so the cache backfills instead of staying on the empty
-    // state until the next launch.
-    .onChange(of: model.phase) { oldPhase, newPhase in
-      guard oldPhase == .needsAuthorization, newPhase == .ready else { return }
-      Task { await syncModel.start() }
-    }
   }
 
   /// Today's and this month's totals, stacked tightly above the marimo.
@@ -68,9 +73,13 @@ struct HomeView: View {
     VStack(alignment: .leading, spacing: 12) {
       todayStat
       // This month's total moved here from under the marimo; redacted until the
-      // first marimo computation lands so it doesn't flash a zero.
-      StepStat(title: "This month", steps: marimoModel.parameters?.totalSteps ?? 0)
-        .redacted(reason: marimoModel.parameters == nil ? .placeholder : [])
+      // first marimo computation lands so it doesn't flash a zero. Withheld
+      // entirely until Health access is resolved, alongside the marimo/heatmap
+      // sections it summarizes.
+      if model.phase == .ready {
+        StepStat(title: "This month", steps: marimoModel.parameters?.totalSteps ?? 0)
+          .redacted(reason: marimoModel.parameters == nil ? .placeholder : [])
+      }
     }
   }
 
@@ -122,6 +131,9 @@ struct HomeView: View {
       }
       .buttonStyle(.borderedProminent)
       .accessibilityIdentifier("home.allowHealthAccessButton")
+      Text("Your steps, marimo, and heatmap will appear here once access is granted.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
   }
 }

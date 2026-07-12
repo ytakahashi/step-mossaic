@@ -53,13 +53,25 @@ struct GrowingMarimoView: View {
   }
 
   private var emptyState: some View {
-    Text("Take a walk and this month's marimo starts to grow.")
-      .font(.subheadline)
-      .foregroundStyle(.secondary)
-      .multilineTextAlignment(.center)
-      .frame(maxWidth: .infinity)
-      .padding()
-      .accessibilityIdentifier("home.marimo.emptyState")
+    VStack(spacing: 4) {
+      Text("Take a walk and this month's marimo starts to grow.")
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .accessibilityIdentifier("home.marimo.emptyState")
+      // This state is indistinguishable from a denied Health read: HealthKit
+      // never reveals denial for read access, so "granted but genuinely no
+      // steps yet" and "denied" both settle here forever. The hint costs
+      // nothing for the ordinary new-user case and is the only recovery path
+      // for the denied one, since Settings is where access can actually be
+      // changed (see `SettingsView`'s `.requested` case).
+      Text("Steps not showing up? Check Health access in Settings.")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+        .accessibilityIdentifier("home.marimo.emptyState.healthAccessHint")
+    }
+    .multilineTextAlignment(.center)
+    .frame(maxWidth: .infinity)
+    .padding()
   }
 
   /// Shown when the sync failed and there is no cached month to draw instead.

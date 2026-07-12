@@ -22,6 +22,7 @@ struct ShelfMarimoThumbnail: View {
         .foregroundStyle(.secondary)
         .lineLimit(1)
     }
+    .accessibilityIdentifier("shelf.month.\(marimo.yearMonth.storageKey)")
   }
 
   /// `YYYY.MM`, zero-padded so widths stay even down the grid.

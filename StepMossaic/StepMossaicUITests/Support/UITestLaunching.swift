@@ -8,6 +8,9 @@ import XCTest
 /// `StepMossaic/App/UITestSupport/UITestScenario.swift`.
 enum UITestScenario: String {
   case healthNotDetermined
+  case emptyState
+  case withData
+  case persistenceFailure
 
   static let launchEnvironmentKey = "UITEST_SCENARIO"
 }

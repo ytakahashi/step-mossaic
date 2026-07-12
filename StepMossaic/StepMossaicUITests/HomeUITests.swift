@@ -21,4 +21,19 @@ final class HomeUITests: XCTestCase {
     // system HealthKit permission dialog, which XCUITest cannot drive reliably.
     XCTAssertTrue(app.buttons["home.allowHealthAccessButton"].waitForExistence(timeout: 5))
   }
+
+  @MainActor
+  func testEmptyState_showsEmptyMarimoAndHeatmap() throws {
+    // Arrange
+    let app = XCUIApplication()
+
+    // Act
+    app.launch(scenario: .emptyState)
+
+    // Assert: sync settles `.empty` (not `.failed`), so both cache-backed
+    // sections show their empty-state copy rather than a redacted placeholder
+    // or a retry prompt.
+    XCTAssertTrue(app.staticTexts["home.marimo.emptyState"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["home.heatmap.emptyState"].exists)
+  }
 }

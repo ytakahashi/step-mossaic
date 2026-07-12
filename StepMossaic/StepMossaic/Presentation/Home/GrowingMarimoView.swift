@@ -35,6 +35,7 @@ struct GrowingMarimoView: View {
         .padding(8)
         // Interpolate as the month grows rather than snapping on each sync.
         .animation(.easeInOut(duration: 0.4), value: parameters)
+        .accessibilityIdentifier("home.marimo.content")
     case .empty:
       emptyState
     case .failed:
@@ -58,6 +59,7 @@ struct GrowingMarimoView: View {
       .multilineTextAlignment(.center)
       .frame(maxWidth: .infinity)
       .padding()
+      .accessibilityIdentifier("home.marimo.emptyState")
   }
 
   /// Shown when the sync failed and there is no cached month to draw instead.

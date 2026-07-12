@@ -49,6 +49,7 @@ struct StepHeatmapView: View {
         positiveLevelCount: model.positiveLevelCount,
         referenceColumnCount: model.referenceColumnCount
       )
+      .accessibilityIdentifier("home.heatmap.content")
       footer(heatmap)
     case .empty:
       emptyState
@@ -116,6 +117,7 @@ struct StepHeatmapView: View {
       .font(.subheadline)
       .foregroundStyle(.secondary)
       .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+      .accessibilityIdentifier("home.heatmap.emptyState")
   }
 
   /// Shown when the sync failed and there is no cached range to draw instead.

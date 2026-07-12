@@ -17,6 +17,7 @@ struct StartupFailureView: View {
         .multilineTextAlignment(.center)
       Button("Try Again", action: onRetry)
         .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("startup.failureView.retryButton")
     }
     .padding()
     .frame(maxWidth: .infinity, maxHeight: .infinity)

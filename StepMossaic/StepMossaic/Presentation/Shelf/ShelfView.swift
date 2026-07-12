@@ -114,6 +114,7 @@ struct ShelfView: View {
       .multilineTextAlignment(.center)
       .padding()
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .accessibilityIdentifier("shelf.emptyState")
   }
 
   /// Shown when the sync failed and there are no frozen months to draw instead.

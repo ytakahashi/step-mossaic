@@ -69,3 +69,20 @@ jobs:
           -project StepMossaic/StepMossaic.xcodeproj \
           -scheme StepMossaicUnitTests \
           -destination "platform=iOS Simulator,name=iPhone 17" | xcbeautify
+
+  app-ui-tests:
+
+    runs-on: macos-26
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Select Xcode
+      run: sudo xcode-select -s "$XCODE_APP"
+
+    - name: Run app UI tests
+      run: |
+        xcodebuild test \
+          -project StepMossaic/StepMossaic.xcodeproj \
+          -scheme StepMossaicUITests \
+          -destination "platform=iOS Simulator,name=iPhone 17" | xcbeautify

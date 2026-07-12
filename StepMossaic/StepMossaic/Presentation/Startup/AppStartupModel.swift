@@ -99,13 +99,20 @@ final class AppStartupModel {
 }
 
 extension AppStartupModel {
-  /// The production factory: opens the real on-disk `ModelContainer`, wires
-  /// the real `AppEnvironment`, and reports through `DiagnosticsLogger`. Kept
-  /// as the single call site `StepMossaicApp` uses so a future `#if DEBUG`
-  /// UI-test scenario switch has one place to override rather than touching
-  /// `StepMossaicApp` itself.
+  /// The single call site `StepMossaicApp` uses to build its startup model.
+  /// In a `#if DEBUG` build launched with a `UITestScenario` in the launch
+  /// environment, this returns a scenario-driven model wired to an in-memory
+  /// container and a fake `StepSource` instead of the real one, so UI tests
+  /// never depend on HealthKit or the on-disk cache. Otherwise (and always in
+  /// Release), it opens the real on-disk `ModelContainer`, wires the real
+  /// `AppEnvironment`, and reports through `DiagnosticsLogger`.
   static func makeDefault() -> AppStartupModel {
-    AppStartupModel(
+    #if DEBUG
+      if let scenario = UITestScenario.current {
+        return scenario.makeStartupModel()
+      }
+    #endif
+    return AppStartupModel(
       makeContainer: { try AppModelContainer.make() },
       reporter: DiagnosticsLogger.report
     )

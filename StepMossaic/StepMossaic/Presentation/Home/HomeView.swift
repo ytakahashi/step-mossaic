@@ -21,27 +21,11 @@ struct HomeView: View {
 
   var body: some View {
     NavigationStack {
-      // No outer scroll: the marimo area absorbs the leftover height so the whole
-      // screen — stats, marimo, heatmap — fits without scrolling.
-      VStack(alignment: .leading, spacing: 16) {
-        header
-        // Health authorization gates these cache-backed sections entirely: syncing
-        // before access is granted is doomed to fail, and surfacing that as a
-        // "Step data couldn't be loaded" error is misleading — there's nothing
-        // broken, the user just hasn't granted access yet. See `authorizationPrompt`
-        // for the state shown instead.
-        if model.phase == .ready {
-          if isSyncFailing, hasCachedHomeContent {
-            SyncFailureBanner(onRetry: retrySync)
-          }
-          GrowingMarimoView(model: marimoModel, onRetry: retrySync)
-          StepHeatmapView(model: heatmapModel, onRetry: retrySync)
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .padding()
-      .navigationTitle("Step Mossaic")
-      .navigationBarTitleDisplayMode(.inline)
+      content
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding()
+        .navigationTitle("Step Mossaic")
+        .navigationBarTitleDisplayMode(.inline)
     }
     // Resolve the phase once on appear, then (re)run the live loop whenever the
     // phase changes; `.task(id:)` cancels the loop on disappear or phase change.
@@ -68,14 +52,54 @@ struct HomeView: View {
     .task(id: syncModel.observationKey) { await marimoModel.observe(syncModel.phase) }
   }
 
+  /// The whole screen, switched on the authorization phase.
+  ///
+  /// The unresolved and unavailable phases replace the screen rather than just the
+  /// today figure: neither has step data behind it, so the stats/marimo/heatmap
+  /// stack has nothing to render, and each of those phases has its own thing to
+  /// say about why (see `HealthAccessRequestView` and `healthUnavailableState`).
+  @ViewBuilder
+  private var content: some View {
+    switch model.phase {
+    case .needsAuthorization:
+      HealthAccessRequestView { await model.requestAccess() }
+    case .unavailable:
+      healthUnavailableState
+    case .loading, .ready:
+      liveContent
+    }
+  }
+
+  /// The step-data screen itself. No outer scroll: the marimo area absorbs the
+  /// leftover height so the whole screen — stats, marimo, heatmap — fits without
+  /// scrolling.
+  private var liveContent: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      header
+      // Sync is gated on authorization being resolved: syncing before access is
+      // granted is doomed to fail, and surfacing that as a "Step data couldn't be
+      // loaded" error is misleading — nothing is broken. `content` routes the
+      // unresolved phase away from here entirely, so these sections only ever
+      // render once there is something real behind them.
+      if model.phase == .ready {
+        if isSyncFailing, hasCachedHomeContent {
+          SyncFailureBanner(onRetry: retrySync)
+        }
+        GrowingMarimoView(model: marimoModel, onRetry: retrySync)
+        StepHeatmapView(model: heatmapModel, onRetry: retrySync)
+      }
+    }
+  }
+
   /// Today's and this month's totals, stacked tightly above the marimo.
   private var header: some View {
     VStack(alignment: .leading, spacing: 12) {
-      todayStat
+      // Redacted while the phase is still resolving, so the figure doesn't flash a
+      // zero before the first read lands.
+      StepStat(title: "Today", steps: model.todaySteps ?? 0)
+        .redacted(reason: model.phase == .loading ? .placeholder : [])
       // This month's total moved here from under the marimo; redacted until the
-      // first marimo computation lands so it doesn't flash a zero. Withheld
-      // entirely until Health access is resolved, alongside the marimo/heatmap
-      // sections it summarizes.
+      // first marimo computation lands so it doesn't flash a zero either.
       if model.phase == .ready {
         StepStat(title: "This month", steps: marimoModel.parameters?.totalSteps ?? 0)
           .redacted(reason: marimoModel.parameters == nil ? .placeholder : [])
@@ -83,21 +107,19 @@ struct HomeView: View {
     }
   }
 
-  @ViewBuilder
-  private var todayStat: some View {
-    switch model.phase {
-    case .loading:
-      StepStat(title: "Today", steps: model.todaySteps ?? 0)
-        .redacted(reason: .placeholder)
-    case .ready:
-      StepStat(title: "Today", steps: model.todaySteps ?? 0)
-    case .needsAuthorization:
-      authorizationPrompt
-    case .unavailable:
-      Text("Health data isn't available on this device.")
+  /// Shown where HealthKit itself is missing. Second line names the requirement:
+  /// this device will never have step data, which is worth stating outright rather
+  /// than leaving the screen looking broken.
+  private var healthUnavailableState: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Apple Health isn't available here.")
         .font(.subheadline)
+      Text("Step Mossaic needs an iPhone.")
+        .font(.caption)
         .foregroundStyle(.secondary)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityIdentifier("home.healthUnavailable")
   }
 
   /// Whether the shared sync failed this turn, read directly from `syncModel`
@@ -119,22 +141,6 @@ struct HomeView: View {
 
   private func retrySync() {
     Task { await syncModel.retry() }
-  }
-
-  private var authorizationPrompt: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Connect Health to see your steps.")
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-      Button("Allow Health Access") {
-        Task { await model.requestAccess() }
-      }
-      .buttonStyle(.borderedProminent)
-      .accessibilityIdentifier("home.allowHealthAccessButton")
-      Text("Your steps, marimo, and heatmap will appear here once access is granted.")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
   }
 }
 

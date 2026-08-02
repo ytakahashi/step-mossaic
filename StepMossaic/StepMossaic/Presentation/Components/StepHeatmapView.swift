@@ -113,7 +113,10 @@ struct StepHeatmapView: View {
   }
 
   private var emptyState: some View {
-    Text("No step data yet. Take a walk and it'll show up here.")
+    // Names the source, not just the absence: on a device that never records
+    // steps this is the state the screen settles in permanently, and "no data
+    // yet" alone would read as the app being broken there.
+    Text("No steps in Apple Health yet.")
       .font(.subheadline)
       .foregroundStyle(.secondary)
       .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)

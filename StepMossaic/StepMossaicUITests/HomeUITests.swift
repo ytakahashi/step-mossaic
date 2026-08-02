@@ -10,7 +10,7 @@ final class HomeUITests: XCTestCase {
   }
 
   @MainActor
-  func testHealthNotDetermined_showsConnectHealthPrompt() throws {
+  func testHealthNotDetermined_showsNeutralPromptWithSample() throws {
     // Arrange
     let app = XCUIApplication()
 
@@ -19,7 +19,15 @@ final class HomeUITests: XCTestCase {
 
     // Assert: existence only — tapping the button would trigger the real
     // system HealthKit permission dialog, which XCUITest cannot drive reliably.
-    XCTAssertTrue(app.buttons["home.allowHealthAccessButton"].waitForExistence(timeout: 5))
+    // The identifier tracks the neutral "Continue" label required by App Store
+    // Review Guideline 5.1.1(iv); a button worded "Allow…" here is a rejection.
+    XCTAssertTrue(app.buttons["home.healthAccessContinueButton"].waitForExistence(timeout: 5))
+
+    // Assert: the screen shows what the app builds from step data, rather than
+    // being a lone button. Labelled as a sample so it can't read as real data.
+    XCTAssertTrue(app.otherElements["home.healthAccessRequest.sampleMarimo"].exists)
+    XCTAssertTrue(app.otherElements["home.healthAccessRequest.sampleHeatmap"].exists)
+    XCTAssertTrue(app.staticTexts["home.healthAccessRequest.sampleLabel"].exists)
 
     // Assert: the cache-backed sections don't render at all before access is
     // resolved — syncing pre-authorization is doomed and would otherwise

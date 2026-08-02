@@ -58,12 +58,15 @@ struct GrowingMarimoView: View {
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .accessibilityIdentifier("home.marimo.emptyState")
-      // This state is indistinguishable from a denied Health read: HealthKit
-      // never reveals denial for read access, so "granted but genuinely no
-      // steps yet" and "denied" both settle here forever. The hint costs
-      // nothing for the ordinary new-user case and is the only recovery path
-      // for the denied one, since Settings is where access can actually be
-      // changed (see `SettingsView`'s `.requested` case).
+      // This state is indistinguishable from a denied Health read, and from a
+      // device that simply has no step data: HealthKit never reveals denial for
+      // read access, so "granted but genuinely no steps yet", "denied", and "no
+      // pedometer ever wrote to this Health store" all settle here forever. The
+      // hint costs nothing for the ordinary new-user case and is the only
+      // recovery path for the other two, since Settings is where access can
+      // actually be changed (see `SettingsView`'s `.requested` case). Which
+      // device records steps is left to the heatmap's empty copy below, so this
+      // screen names it once rather than twice.
       Text("Steps not showing up? Check Health access in Settings.")
         .font(.caption2)
         .foregroundStyle(.tertiary)

@@ -64,12 +64,25 @@ struct SettingsView: View {
   private var healthContent: some View {
     switch model.authorizationStatus {
     case .unavailable:
-      Text("Health data isn't available on this device.")
+      Text("Apple Health isn't available on this device.")
         .font(.subheadline)
+      Text("Your step count is recorded by your iPhone or Apple Watch.")
+        .font(.caption)
         .foregroundStyle(.secondary)
     case .notDetermined:
       LabeledContent("Steps", value: "Not connected")
-      Button("Connect Health") {
+      // States what is read and what for, then a neutral button. App Store Review
+      // Guideline 5.1.1(iv) forbids urging the user to grant access from a custom
+      // pre-permission screen, so the button that raises the system prompt must
+      // not read "Allow…"/"Connect…" — see `HealthAccessRequestView` for the same
+      // rule applied on Home.
+      Text(
+        "Step Mossaic reads your daily step count from Apple Health to build your "
+          + "heatmap and marimo."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      Button("Continue") {
         Task { await model.requestAccess() }
       }
     case .requested:
